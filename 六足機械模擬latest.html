@@ -90,9 +90,10 @@
     <div class="control-panel">
         <div class="control-row">
             <button id="toggleBtn">Pause Auto-Play</button>
+            <button id="periodBtn">Play One Period</button>
             <button id="clearBtn">Clear Paths</button>
             <label style="width: auto; margin-left: 10px;">
-                <input type="checkbox" id="showPathsCheck" checked> Show Trajectories
+                <input type="checkbox" id="showPathsCheck"> Show Trajectories
             </label>
         </div>
 
@@ -118,9 +119,9 @@
                 <span class="val-display" id="angleVal">0°</span>
             </div>
             <div class="slider-group">
-                <label for="stiffSlider">Stiffness:</label>
-                <input type="range" id="stiffSlider" min="0.5" max="20" step="0.5" value="6">
-                <span class="val-display" id="stiffVal">6.0</span>
+                <label for="stiffSlider">Gravity Scale:</label>
+                <input type="range" id="stiffSlider" min="0.1" max="5" step="0.1" value="1.0">
+                <span class="val-display" id="stiffVal">1.0</span>
             </div>
         </div>
     </div>
@@ -137,17 +138,22 @@
         // State Variables
         let theta = 0;
         let isPlaying = true;
-        let showPaths = true;
+        let showPaths = false;
         let simSpeed = 0.04;
-        let stiffness = 6.0;    // spring-damper stiffness (user-controlled)
-        const damping = 0.75;   // damping ratio (0~1), fixed; prevents overshoot
-        let povMode = 'robot'; // 'robot' or 'world'
+        let gravityScale = 1.0;
+        let povMode = 'world'; // 'robot' or 'world'
         let pathF = [], pathM = [], pathR = [];
         const maxPathLen = 120;
-        let isLooping = false; // Whether the animation frame loop is currently running
+        let isLooping = false;
+        let playOnePeriod = false;
+        let accumulatedTheta = 0;
 
-        // Spring-damper state for ground: position + velocity for m and c.
-        let smoothedGround = { m: 0, c: groundY, vm: 0, vc: 0 };
+        // Torque-based physics state
+        let smoothedGround = { m: 0, c: groundY };
+        let angularVel = 0; // Current tipping angular velocity 
+        let linearVelC = 0; // Current vertical velocity of the intercept c
+        let isTorqueMode = false; // Whether we are in gravity-tipping mode (hysteresis)
+        let lockedPivot = null;   // The pivot point locked during a tipping event
 
         // Viewport Mapping
         const scale = 3.5;
@@ -171,11 +177,10 @@
                 let tempX = p.x * cosT - p.y * sinT;
                 let tempY = p.x * sinT + p.y * cosT;
 
-                // 位移 (Shift so that the smoothed ground intercept stays at a fixed physical y: groundY)
-                // c is the ground's y intercept at chassis x=0 before rotation.
-                // We want to translate the robot UP by the difference (c - groundY) rotated.
-                let shiftY = smoothedGround.c - groundY;
-                let finalShiftY = shiftY * cosT;
+                // 位移 (Shift so that the ground line y = mx + c maps to world y = groundY)
+                // 原理：在轉動後，原本 y = mx + c 上的點會落在 y_world = c * cosT
+                // 因此位移量需補償 (c * cosT - groundY)
+                let finalShiftY = smoothedGround.c * cosT - groundY;
 
                 rx = tempX;
                 ry = tempY - finalShiftY;
@@ -283,22 +288,62 @@
                     groundLine = { m: 0, c: lowest.y };
                 }
 
-                // Spring-damper model.
-                // 重心偏差越大 → 回復力越大，區別於改變這個平滑就沒有這个特性。
-                // k (剛性) = stiffness * simSpeed ，能同時受馬達速度與用戶scaling影響。
-                // b (阻尼) = 2 * damping * sqrt(k) ，臨界阻尼公式  b = 2ζ√k
-                const k = stiffness * simSpeed;
-                const b = 2 * damping * Math.sqrt(k);
+                // --- Torque-Based Physics Update (Refined: Hysteresis + Pivot Locking) ---
+                const targetM = groundLine.m;
+                const targetC = groundLine.c;
+                const diffM = targetM - smoothedGround.m;
+                const absDiffM = Math.abs(diffM);
 
-                // 領先計算加速度 (a = k * error - b * velocity)
-                const accM = k * (groundLine.m - smoothedGround.m) - b * smoothedGround.vm;
-                const accC = k * (groundLine.c - smoothedGround.c) - b * smoothedGround.vc;
+                const TriggerThreshold = 0.05; // 進入力矩模式的閾值 (約 2.8 度)
+                const SettleThreshold = 0.005;  // 回到貼合模式的閾值 (約 0.3 度)
 
-                // 积分 velocity + position
-                smoothedGround.vm += accM;
-                smoothedGround.vc += accC;
-                smoothedGround.m += smoothedGround.vm;
-                smoothedGround.c += smoothedGround.vc;
+                if (!isTorqueMode) {
+                    if (absDiffM > TriggerThreshold) {
+                        isTorqueMode = true;
+                        // 鎖定支點：使用者指定在傾斜初期應繞著中間腳 (Center) 旋轉
+                        // 隨後側邊腳 (Left/Right) 才會觸地形成穩定支撐
+                    } else {
+                        // 貼合模式 (Kinematic Snap)：微小腳步調整
+                        smoothedGround.m = targetM;
+                        smoothedGround.c = targetC;
+                        angularVel = 0;
+                        linearVelC = 0;
+                    }
+                }
+
+                if (isTorqueMode) {
+                    // 每影格更新支點座標以追蹤連桿運動
+                    lockedPivot = feet[1];
+
+                    // 2. 計算力矩產生的角加速度
+                    // 進一步降低基礎係數 (0.002 -> 0.0008) 以回應使用者減弱重力的要求
+                    let accM = diffM * gravityScale * 0.0008;
+                    angularVel += accM;
+                    // 加入微量摩擦力以增加真實感
+                    angularVel *= 0.98;
+
+                    let oldM = smoothedGround.m;
+                    smoothedGround.m += angularVel;
+
+                    // 幾何約束：繞著鎖定的支點旋轉，c 由 m 決定
+                    smoothedGround.c = lockedPivot.y - smoothedGround.m * lockedPivot.x;
+                    linearVelC = smoothedGround.c - (lockedPivot.y - oldM * lockedPivot.x);
+
+                    // 碰撞判定或收斂 (Dead-stop)
+                    // 新增：足端碰撞判定 (檢查是否有任何一隻腳穿透目前的地面線)
+                    let feetCollision = feet.some(f => f.y < (smoothedGround.m * f.x + smoothedGround.c - 0.5));
+
+                    const overshot = (targetM > oldM) ? (smoothedGround.m > targetM) : (smoothedGround.m < targetM);
+
+                    if (overshot || feetCollision || absDiffM < SettleThreshold) {
+                        isTorqueMode = false;
+                        lockedPivot = null;
+                        smoothedGround.m = targetM;
+                        smoothedGround.c = targetC;
+                        angularVel = 0;
+                        linearVelC = 0;
+                    }
+                }
 
                 ctx.beginPath();
                 if (povMode === 'robot') {
@@ -353,6 +398,11 @@
                 drawPoint(Pf, 'black', 5);
                 drawPoint(Pr, 'black', 5);
                 drawPoint(C_crank, '#cc0000', 5); // Make crank center red for visibility
+
+                // --- Pivot Visualization ---
+                if (isTorqueMode && lockedPivot) {
+                    drawPoint(lockedPivot, '#ff00ff', 8);
+                }
             }
         }
         function animate() {
@@ -360,6 +410,16 @@
 
             if (isPlaying) {
                 theta += simSpeed;
+                if (playOnePeriod) {
+                    accumulatedTheta += simSpeed;
+                    if (accumulatedTheta >= Math.PI * 2) {
+                        isPlaying = false;
+                        playOnePeriod = false;
+                        accumulatedTheta = 0;
+                        const toggleBtn = document.getElementById('toggleBtn');
+                        if (toggleBtn) toggleBtn.innerText = "Resume Auto-Play";
+                    }
+                }
                 if (theta > Math.PI * 2) theta -= Math.PI * 2;
                 let deg = Math.round((theta / Math.PI) * 180);
                 document.getElementById('angleSlider').value = deg;
@@ -369,7 +429,7 @@
             renderFrame(theta, isPlaying);
 
             const eps = 0.000001;
-            if (Math.abs(smoothedGround.vm) > eps || Math.abs(smoothedGround.vc) > eps * 10) {
+            if (isPlaying || Math.abs(angularVel) > eps || Math.abs(linearVelC) > eps * 10) {
                 needsRendering = true;
             }
 
@@ -389,9 +449,19 @@
         }
 
         // --- UI Listeners ---
+        const toggleBtn = document.getElementById('toggleBtn');
         toggleBtn.addEventListener('click', () => {
             isPlaying = !isPlaying;
+            playOnePeriod = false; // Reset one-period mode if manually toggled
             toggleBtn.innerText = isPlaying ? "Pause Auto-Play" : "Resume Auto-Play";
+            requestUpdate();
+        });
+
+        document.getElementById('periodBtn').addEventListener('click', () => {
+            isPlaying = true;
+            playOnePeriod = true;
+            accumulatedTheta = 0;
+            toggleBtn.innerText = "Pause Auto-Play";
             requestUpdate();
         });
 
@@ -421,26 +491,23 @@
             requestUpdate();
         });
 
-        // Stiffness Control
+        // Gravity Control
         document.getElementById('stiffSlider').addEventListener('input', (e) => {
-            stiffness = parseFloat(e.target.value);
-            document.getElementById('stiffVal').innerText = stiffness.toFixed(1);
-            // Reset velocity to avoid accumulated momentum from old stiffness
-            smoothedGround.vm = 0;
-            smoothedGround.vc = 0;
+            gravityScale = parseFloat(e.target.value);
+            document.getElementById('stiffVal').innerText = gravityScale.toFixed(1);
+            // Reset velocity
+            angularVel = 0;
+            linearVelC = 0;
             requestUpdate();
         });
 
         const angleSlider = document.getElementById('angleSlider');
         angleSlider.addEventListener('input', (e) => {
-            isPlaying = false;
-            toggleBtn.innerText = "Resume Auto-Play";
-
+            // Updated: Don't force pause or clear paths to ensure continuity.
             let deg = parseInt(e.target.value);
             document.getElementById('angleVal').innerText = deg + '°';
             theta = (deg / 180) * Math.PI;
 
-            pathF = []; pathM = []; pathR = [];
             requestUpdate();
         });
 

@@ -63,3 +63,12 @@
 ## 快速開始
 
 直接在任何現代瀏覽器（Chrome, Safari, Firefox）中開啟 `六足機械模擬latest.html` 即可開始模擬。
+
+## To do next
+
+1. remove gravity scale
+2. add silder to all variables on leg and crane
+3. change to traditional chinese
+4. let the ground move 
+5. show which leg is touching ground
+6. reverse the rotation direction by click a box

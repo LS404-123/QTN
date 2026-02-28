@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Six-Legged Simulator - Posture Control</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin-top: 1rem;
+        }
+
+        #simCanvas {
+            background-color: #1a1a1a;
+            border-radius: 8px;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+            margin-bottom: 15px;
+        }
+
+        .control-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 860px;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-grow: 1;
+        }
+
+        input[type="range"] {
+            flex-grow: 1;
+            cursor: pointer;
+        }
+
+        button {
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        label,
+        span {
+            font-size: 14px;
+            color: #333;
+            font-weight: bold;
+            width: 120px;
+        }
+
+        .val-display {
+            width: 50px;
+            text-align: right;
+            color: #007bff;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Kinematic Simulator: Hexapod Posture Control</h2>
+    <canvas id="simCanvas" width="900" height="500"></canvas>
+
+    <div class="control-panel">
+        <div class="control-row">
+            <button id="toggleBtn">Pause Auto-Play</button>
+            <button id="clearBtn">Clear Paths</button>
+            <label style="width: auto; margin-left: 10px;">
+                <input type="checkbox" id="showPathsCheck" checked> Show Trajectories
+            </label>
+        </div>
+
+        <div class="control-row">
+            <div class="slider-group">
+                <label for="speedSlider">Sim Speed:</label>
+                <input type="range" id="speedSlider" min="0.01" max="0.15" step="0.01" value="0.04">
+                <span class="val-display" id="speedVal">0.04</span>
+            </div>
+            <div class="slider-group">
+                <label for="povSelect">Camera POV:</label>
+                <select id="povSelect" style="padding: 4px; font-size: 14px; flex-grow: 1;">
+                    <option value="robot">Robot-Centric (Fixed Chassis)</option>
+                    <option value="world">World-Centric (Fixed Ground)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="control-row">
+            <div class="slider-group">
+                <label for="angleSlider">Manual Angle:</label>
+                <input type="range" id="angleSlider" min="0" max="360" step="1" value="0">
+                <span class="val-display" id="angleVal">0°</span>
+            </div>
+            <div class="slider-group">
+                <label for="stiffSlider">Stiffness:</label>
+                <input type="range" id="stiffSlider" min="0.5" max="20" step="0.5" value="6">
+                <span class="val-display" id="stiffVal">6.0</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Geometry Constants
+        const S = 48.0, R = 11.0, L_leg = 46.0, L_blue = 67.0, L_foot = 26.0;
+        const groundY = -51.5;
+        const Pf = { x: -S, y: 0 }, Pr = { x: S, y: 0 }, C_crank = { x: 0, y: 0 };
+
+        // State Variables
+        let theta = 0;
+        let isPlaying = true;
+        let showPaths = true;
+        let simSpeed = 0.04;
+        let stiffness = 6.0;    // spring-damper stiffness (user-controlled)
+        const damping = 0.75;   // damping ratio (0~1), fixed; prevents overshoot
+        let povMode = 'robot'; // 'robot' or 'world'
+        let pathF = [], pathM = [], pathR = [];
+        const maxPathLen = 120;
+        let isLooping = false; // Whether the animation frame loop is currently running
+
+        // Spring-damper state for ground: position + velocity for m and c.
+        let smoothedGround = { m: 0, c: groundY, vm: 0, vc: 0 };
+
+        // Viewport Mapping
+        const scale = 3.5;
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2 + 50;
+
+        // Applies 2D rotation & translation for rendering based on POV
+        function mapCoords(p) {
+            let rx = p.x;
+            let ry = p.y;
+
+            if (povMode === 'world') {
+                // In World mode, the ground stays flat and fixed. 
+                // The robot rotates opposite to the ground slope to make the ground appear flat.
+                // It also translates vertically so the ground is at a fixed screen Y.
+                let tiltRad = -Math.atan(smoothedGround.m);
+                const cosT = Math.cos(tiltRad);
+                const sinT = Math.sin(tiltRad);
+
+                // 旋轉 (Rotate point around the origin)
+                let tempX = p.x * cosT - p.y * sinT;
+                let tempY = p.x * sinT + p.y * cosT;
+
+                // 位移 (Shift so that the smoothed ground intercept stays at a fixed physical y: groundY)
+                // c is the ground's y intercept at chassis x=0 before rotation.
+                // We want to translate the robot UP by the difference (c - groundY) rotated.
+                let shiftY = smoothedGround.c - groundY;
+                let finalShiftY = shiftY * cosT;
+
+                rx = tempX;
+                ry = tempY - finalShiftY;
+            }
+
+            return { x: cx + rx * scale, y: cy - ry * scale };
+        }
+
+        // Math Functions
+        function getIntersection(C1, r1, C2, r2) {
+            const dx = C2.x - C1.x, dy = C2.y - C1.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d > r1 + r2 || d < Math.abs(r1 - r2) || d === 0) return null;
+            const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+            const h_sq = r1 * r1 - a * a;
+            const h = Math.sqrt(Math.max(0, h_sq));
+            const P2x = C1.x + a * dx / d, P2y = C1.y + a * dy / d;
+            const P3a = { x: P2x - h * dy / d, y: P2y + h * dx / d };
+            const P3b = { x: P2x + h * dy / d, y: P2y - h * dx / d };
+            return (P3a.y > P3b.y) ? P3a : P3b;
+        }
+
+        function extendPoint(P_top, P_bottom, extLen) {
+            const dx = P_bottom.x - P_top.x, dy = P_bottom.y - P_top.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            return { x: P_bottom.x + (dx / dist) * extLen, y: P_bottom.y + (dy / dist) * extLen };
+        }
+
+        // Drawing Helpers
+        function drawLine(p1, p2, color, width) {
+            if (!p1 || !p2) return;
+            const m1 = mapCoords(p1), m2 = mapCoords(p2);
+            ctx.beginPath(); ctx.moveTo(m1.x, m1.y); ctx.lineTo(m2.x, m2.y);
+            ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.stroke();
+        }
+
+        function drawPath(path, color) {
+            if (!showPaths || path.length < 2) return;
+            ctx.beginPath();
+            const start = mapCoords(path[0]);
+            ctx.moveTo(start.x, start.y);
+            for (let i = 1; i < path.length; i++) {
+                const pt = mapCoords(path[i]);
+                ctx.lineTo(pt.x, pt.y);
+            }
+            ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+        }
+
+        function drawPoint(p, color, radius) {
+            const mp = mapCoords(p);
+            ctx.beginPath(); ctx.arc(mp.x, mp.y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = color; ctx.fill();
+        }
+
+        // Core Render Function
+        function renderFrame(currentTheta, recordPath) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 先計算當前三足端在世界座標系(未考慮Tilt)的確切位置
+            const ML = { x: R * Math.cos(currentTheta), y: R * Math.sin(currentTheta) };
+            const MT = getIntersection(ML, L_leg, Pf, L_blue);
+            const FT = getIntersection(Pf, L_leg, ML, L_blue);
+            const RT = getIntersection(Pr, L_leg, ML, L_blue);
+
+            let groundLine = null;
+
+            if (MT && FT && RT) {
+                const foot_f = extendPoint(FT, Pf, L_foot);
+                const foot_m = extendPoint(MT, ML, L_foot);
+                const foot_r = extendPoint(RT, Pr, L_foot);
+
+                // --- 動態地面計算 (Robot POV) ---
+                // 找出支撐機體的地面線 (保證所有腳都在該線之上(y值較大或相等)，且質心x=0在兩支點之間)
+                const feet = [foot_f, foot_m, foot_r];
+                const pairs = [
+                    { a: foot_f, b: foot_m, c: foot_r },
+                    { a: foot_m, b: foot_r, c: foot_f },
+                    { a: foot_f, b: foot_r, c: foot_m }
+                ];
+
+                for (let p of pairs) {
+                    let dx = p.b.x - p.a.x;
+                    if (Math.abs(dx) < 0.01) continue;
+                    let m = (p.b.y - p.a.y) / dx;
+                    let y_intercept = p.a.y - m * p.a.x;
+
+                    // 檢查第三隻腳是否在線上或線「上」方
+                    // 在此座標系中，腳的y值為負，越往下y越小。
+                    // 所以要求 c.y >= m * c.x + y_intercept (考量浮點數誤差)
+                    let c_line_y = m * p.c.x + y_intercept;
+                    if (p.c.y >= c_line_y - 0.1) {
+                        // 檢查質心是否落在兩支點之間 (X軸)
+                        let minX = Math.min(p.a.x, p.b.x);
+                        let maxX = Math.max(p.a.x, p.b.x);
+                        if (minX <= 0 && maxX >= 0) {
+                            groundLine = { m: m, c: y_intercept };
+                            break;
+                        }
+                    }
+                }
+
+                // 若因極端情況沒找到跨越重心的兩點(如單腳著地)，退化為水平過最低點
+                if (!groundLine) {
+                    let lowest = feet.reduce((min, p) => p.y < min.y ? p : min, feet[0]);
+                    groundLine = { m: 0, c: lowest.y };
+                }
+
+                // Spring-damper model.
+                // 重心偏差越大 → 回復力越大，區別於改變這個平滑就沒有這个特性。
+                // k (剛性) = stiffness * simSpeed ，能同時受馬達速度與用戶scaling影響。
+                // b (阻尼) = 2 * damping * sqrt(k) ，臨界阻尼公式  b = 2ζ√k
+                const k = stiffness * simSpeed;
+                const b = 2 * damping * Math.sqrt(k);
+
+                // 領先計算加速度 (a = k * error - b * velocity)
+                const accM = k * (groundLine.m - smoothedGround.m) - b * smoothedGround.vm;
+                const accC = k * (groundLine.c - smoothedGround.c) - b * smoothedGround.vc;
+
+                // 积分 velocity + position
+                smoothedGround.vm += accM;
+                smoothedGround.vc += accC;
+                smoothedGround.m += smoothedGround.vm;
+                smoothedGround.c += smoothedGround.vc;
+
+                ctx.beginPath();
+                if (povMode === 'robot') {
+                    // 畫出相對於機體(目前機體恆定為水平)的傾斜地面
+                    const gX1 = -200;
+                    const gY1 = smoothedGround.m * gX1 + smoothedGround.c;
+                    const gX2 = 200;
+                    const gY2 = smoothedGround.m * gX2 + smoothedGround.c;
+
+                    const gm1 = mapCoords({ x: gX1, y: gY1 });
+                    const gm2 = mapCoords({ x: gX2, y: gY2 });
+                    ctx.moveTo(gm1.x, gm1.y);
+                    ctx.lineTo(gm2.x, gm2.y);
+                } else {
+                    // World POV: The ground is perfectly flat at fixed screen y (mapping groundY).
+                    // The robot rotates independently.
+                    // Instead of finding 2 points and mapping them (which would rotate back flat),
+                    // we just draw a static horizontal line directly on the canvas!
+                    const groundCanvasY = cy - groundY * scale;
+                    ctx.moveTo(0, groundCanvasY);
+                    ctx.lineTo(canvas.width, groundCanvasY);
+                }
+                ctx.strokeStyle = '#555'; ctx.lineWidth = 4; ctx.stroke();
+
+                // Record Paths
+                if (recordPath) {
+                    pathF.push(foot_f); pathM.push(foot_m); pathR.push(foot_r);
+                    if (pathF.length > maxPathLen) { pathF.shift(); pathM.shift(); pathR.shift(); }
+                }
+
+                // Draw Elements (Bottom to Top Layer)
+                drawPath(pathF, 'rgba(255, 100, 100, 0.6)');
+                drawPath(pathM, 'rgba(100, 255, 100, 0.6)');
+                drawPath(pathR, 'rgba(100, 100, 255, 0.6)');
+
+                // Chassis (White Bar passing through joints)
+                const chassisExt = 15; // Extend slightly beyond the fixed joints
+                drawLine({ x: -S - chassisExt, y: 0 }, { x: S + chassisExt, y: 0 }, 'white', 8);
+
+                // Linkage Mechanism
+                drawLine(C_crank, ML, 'white', 3);
+                drawLine(FT, ML, '#4da6ff', 5);
+                drawLine(Pf, MT, '#4da6ff', 5);
+                drawLine(ML, RT, '#4da6ff', 5);
+
+                // Legs
+                drawLine(FT, foot_f, '#ffcc00', 12);
+                drawLine(MT, foot_m, '#ffcc00', 12);
+                drawLine(RT, foot_r, '#ffcc00', 12);
+
+                // Joints
+                drawPoint(Pf, 'black', 5);
+                drawPoint(Pr, 'black', 5);
+                drawPoint(C_crank, '#cc0000', 5); // Make crank center red for visibility
+            }
+        }
+        function animate() {
+            let needsRendering = isPlaying;
+
+            if (isPlaying) {
+                theta += simSpeed;
+                if (theta > Math.PI * 2) theta -= Math.PI * 2;
+                let deg = Math.round((theta / Math.PI) * 180);
+                document.getElementById('angleSlider').value = deg;
+                document.getElementById('angleVal').innerText = deg + '°';
+            }
+
+            renderFrame(theta, isPlaying);
+
+            const eps = 0.000001;
+            if (Math.abs(smoothedGround.vm) > eps || Math.abs(smoothedGround.vc) > eps * 10) {
+                needsRendering = true;
+            }
+
+            if (needsRendering) {
+                isLooping = true;
+                requestAnimationFrame(animate);
+            } else {
+                isLooping = false;
+            }
+        }
+
+        function requestUpdate() {
+            if (!isLooping) {
+                isLooping = true;
+                requestAnimationFrame(animate);
+            }
+        }
+
+        // --- UI Listeners ---
+        toggleBtn.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            toggleBtn.innerText = isPlaying ? "Pause Auto-Play" : "Resume Auto-Play";
+            requestUpdate();
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            pathF = []; pathM = []; pathR = [];
+            requestUpdate();
+        });
+
+        document.getElementById('showPathsCheck').addEventListener('change', (e) => {
+            showPaths = e.target.checked;
+            requestUpdate();
+        });
+
+        const speedSlider = document.getElementById('speedSlider');
+        speedSlider.addEventListener('input', (e) => {
+            simSpeed = parseFloat(e.target.value);
+            document.getElementById('speedVal').innerText = simSpeed.toFixed(2);
+            requestUpdate();
+        });
+
+        // New POV Control
+        const povSelect = document.getElementById('povSelect');
+        povSelect.addEventListener('change', (e) => {
+            povMode = e.target.value;
+            // Clear paths so old paths don't clash with the new coordinate mapping
+            pathF = []; pathM = []; pathR = [];
+            requestUpdate();
+        });
+
+        // Stiffness Control
+        document.getElementById('stiffSlider').addEventListener('input', (e) => {
+            stiffness = parseFloat(e.target.value);
+            document.getElementById('stiffVal').innerText = stiffness.toFixed(1);
+            // Reset velocity to avoid accumulated momentum from old stiffness
+            smoothedGround.vm = 0;
+            smoothedGround.vc = 0;
+            requestUpdate();
+        });
+
+        const angleSlider = document.getElementById('angleSlider');
+        angleSlider.addEventListener('input', (e) => {
+            isPlaying = false;
+            toggleBtn.innerText = "Resume Auto-Play";
+
+            let deg = parseInt(e.target.value);
+            document.getElementById('angleVal').innerText = deg + '°';
+            theta = (deg / 180) * Math.PI;
+
+            pathF = []; pathM = []; pathR = [];
+            requestUpdate();
+        });
+
+        // Start
+        isLooping = true;
+        renderFrame(theta, true);
+        animate();
+
+    </script>
+</body>
+
+</html>

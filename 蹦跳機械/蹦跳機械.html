@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Robot Mechanism</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f0f4f8;
+            font-family: sans-serif;
+        }
+
+        .app-container {
+            background-color: #ffffff;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            width: 800px;
+            max-width: 100%;
+        }
+
+        .canvas-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px 0;
+        }
+
+        svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .control-panel {
+            background-color: #f8f9fa;
+            border-top: 1px solid #eaeaea;
+            padding: 20px 30px;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .control-panel label {
+            font-weight: 600;
+            color: #444;
+            white-space: nowrap;
+        }
+
+        input[type="range"] {
+            flex-grow: 1;
+            accent-color: #fbc02d;
+            cursor: pointer;
+        }
+
+        .speed-value {
+            font-weight: bold;
+            color: #222;
+            width: 45px;
+            text-align: right;
+            font-family: monospace;
+            font-size: 1.1em;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="app-container">
+        <div class="canvas-wrapper">
+            <svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+
+                <!-- Definitions for filters and gradients -->
+                <defs>
+                    <filter id="drop-shadow" x="-10%" y="-10%" width="130%" height="130%">
+                        <feDropShadow dx="2" dy="5" stdDeviation="4" flood-opacity="0.15" />
+                    </filter>
+
+                    <linearGradient id="board-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="#ffeb3b" />
+                        <stop offset="100%" stop-color="#fbc02d" />
+                    </linearGradient>
+
+                    <linearGradient id="wood-gradient" x1="0%" y1="0%" x2="10%" y2="100%">
+                        <stop offset="0%" stop-color="#fae5c8" />
+                        <stop offset="100%" stop-color="#e8cd9d" />
+                    </linearGradient>
+
+                    <linearGradient id="ring-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="#f5f5f5" />
+                        <stop offset="100%" stop-color="#e0e0e0" />
+                    </linearGradient>
+                </defs>
+
+                <!-- ========================================== -->
+                <!-- ROBOT ASSEMBLY (Robot-Centric POV)         -->
+                <!-- ========================================== -->
+                <g id="robot-wrapper" transform="translate(60, -80)">
+                    <!-- GROUND LINE & SCENERY (Local to Robot) -->
+                    <g id="ground">
+                        <!-- Main horizontal ground line -->
+                        <line id="ground-line" x1="-2000" y1="0" x2="3000" y2="0" stroke="#777777" stroke-width="4"
+                            stroke-linecap="round" />
+                        <!-- Ground hatching container -->
+                        <g id="ground-hatching"></g>
+                    </g>
+
+                    <!-- LEFT ASSEMBLY: White/Grey Ring -->
+                    <g id="left-ring">
+                        <!-- Thinner PVC-like ring (Visualized with stroke) -->
+                        <circle id="ring-main" cx="170" cy="285" r="65" fill="none" stroke="url(#ring-gradient)"
+                            stroke-width="8" filter="url(#drop-shadow)" />
+                        <!-- Outer rim detail -->
+                        <circle id="ring-outer" cx="170" cy="285" r="69" fill="none" stroke="#cccccc"
+                            stroke-width="1" />
+                        <!-- Inner rim detail -->
+                        <circle id="ring-inner" cx="170" cy="285" r="61" fill="none" stroke="#cfcfcf"
+                            stroke-width="1" />
+                    </g>
+
+                    <!-- MAIN BODY: Yellow Horizontal Board -->
+                    <g id="main-body" filter="url(#drop-shadow)">
+                        <rect x="60" y="200" width="50" height="15" fill="url(#wood-gradient)" rx="5" />
+                        <rect x="90" y="200" width="610" height="15" fill="url(#board-gradient)" />
+                        <rect x="90" y="215" width="610" height="5" fill="#f5b000" />
+                    </g>
+
+                    <!-- BATTERY BOX (At the back of the yellow body) -->
+                    <g id="battery-box" filter="url(#drop-shadow)">
+                        <!-- Main black body -->
+                        <rect x="610" y="150" width="80" height="50" fill="#222222" rx="6" />
+                        <!-- Detail -->
+                        <rect x="615" y="160" width="70" height="30" fill="none" stroke="#444444" stroke-width="2"
+                            rx="3" />
+                    </g>
+
+                    <!-- MIDDLE ASSEMBLY: Suspended Crane Mechanism -->
+                    <g id="crane-assembly">
+                        <!-- Bracket attached to the TOP of the yellow board -->
+                        <rect x="390" y="175" width="20" height="25" fill="#999999" rx="3" />
+                        <rect x="392" y="175" width="16" height="25" fill="#a8a8a8" rx="2" />
+
+                        <!-- Crane Arm Group -->
+                        <g transform="translate(400, 185)">
+                            <!-- Spin group controlled by Javascript now to allow smooth speed changes -->
+                            <g id="crane-spin-group">
+                                <!-- Blue Arm -->
+                                <rect x="-10" y="-10" width="20" height="70" fill="#5fcaf0" rx="8"
+                                    filter="url(#drop-shadow)" />
+                                <rect x="-8" y="-8" width="16" height="66" fill="none" stroke="#a0e4fa" stroke-width="1"
+                                    rx="6" />
+
+                                <!-- Top Pivot Bolt -->
+                                <circle cx="0" cy="0" r="5" fill="#e0e0e0" stroke="#666666" stroke-width="1.5" />
+                                <circle cx="0" cy="0" r="2" fill="#444444" />
+
+                                <!-- Suspended Wooden Diamond -->
+                                <g filter="url(#drop-shadow)">
+                                    <rect x="0" y="50" width="60" height="60" fill="url(#wood-gradient)"
+                                        stroke="#cba371" stroke-width="2" transform="rotate(45, 0, 50)" />
+                                </g>
+                            </g>
+                        </g>
+                    </g>
+
+                    <!-- RIGHT ASSEMBLY: Wooden Walking Leg Structure -->
+                    <g id="right-leg-assembly" filter="url(#drop-shadow)">
+                        <!-- Vertical Thigh Block -->
+                        <rect x="635" y="215" width="65" height="215" fill="url(#wood-gradient)" rx="1" />
+                        <line x1="635" y1="215" x2="635" y2="430" stroke="#dcb98a" stroke-width="1" />
+                        <line x1="700" y1="215" x2="700" y2="430" stroke="#dcb98a" stroke-width="1" />
+                        <line x1="635" y1="430" x2="700" y2="430" stroke="#dcb98a" stroke-width="1" />
+
+                        <!-- Front Leg/Calf Piece -->
+                        <!-- Attached exactly at the bottom-right corner of the thigh block (700, 430) -->
+                        <!-- Local rotation matches absolute body tilt to make piece perpendicular to ground -->
+                        <g transform="translate(700, 430) rotate(30.17)">
+                            <rect x="-65" y="0" width="65" height="220" fill="url(#wood-gradient)" rx="1" />
+                            <line x1="-65" y1="0" x2="-65" y2="220" stroke="#dcb98a" stroke-width="1" />
+                            <line x1="0" y1="0" x2="0" y2="220" stroke="#dcb98a" stroke-width="1" />
+                            <line x1="-65" y1="0" x2="0" y2="0" stroke="#cba371" stroke-width="1.5" />
+                            <line x1="-65" y1="220" x2="0" y2="220" stroke="#dcb98a" stroke-width="1" />
+                        </g>
+                    </g>
+
+                    <!-- CENTER OF MASS MARKER -->
+                    <g id="com-marker">
+                        <circle cx="0" cy="0" r="12" fill="none" stroke="#e91e63" stroke-width="2" />
+                        <line x1="-16" y1="0" x2="16" y2="0" stroke="#e91e63" stroke-width="2" />
+                        <line x1="0" y1="-16" x2="0" y2="16" stroke="#e91e63" stroke-width="2" />
+                        <circle cx="0" cy="0" r="4" fill="#e91e63" />
+                        <text x="14" y="-14" fill="#e91e63" font-size="14" font-family="sans-serif"
+                            font-weight="bold">COM</text>
+                    </g>
+                </g>
+
+                <!-- Error Overlay -->
+                <g id="error-overlay" style="display: none;">
+                    <rect x="0" y="0" width="800" height="600" fill="rgba(255,0,0,0.15)" />
+                    <text x="400" y="300" fill="#cc0000" font-size="24" font-family="sans-serif" font-weight="bold"
+                        text-anchor="middle">幾何約束衝突！機器人已穿入地面。</text>
+                </g>
+            </svg>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <label for="speedSlider">Crane Speed:</label>
+            <input type="range" id="speedSlider" min="0.2" max="5" step="0.2" value="1">
+            <div class="speed-value" id="speedDisplay">1.0x</div>
+
+            <label for="ringXSlider">Ring position (X):</label>
+            <input type="range" id="ringXSlider" min="100" max="260" step="1" value="150">
+            <div class="speed-value" id="ringXDisplay">150</div>
+
+            <label for="povSelect">POV Mode:</label>
+            <select id="povSelect">
+                <option value="world">World centric</option>
+                <option value="robot">Robot centric</option>
+            </select>
+        </div>
+    </div>
+
+    <script>
+        const slider = document.getElementById('speedSlider');
+        const display = document.getElementById('speedDisplay');
+        const ringXSlider = document.getElementById('ringXSlider');
+        const ringXDisplay = document.getElementById('ringXDisplay');
+        const povSelect = document.getElementById('povSelect');
+        const craneGroup = document.getElementById('crane-spin-group');
+        const robotWrapper = document.getElementById('robot-wrapper');
+
+        // Base speed increased by a factor of 5 (450 degrees per second instead of 90)
+        const BASE_SPEED = 450;
+
+        let currentAngle = 0;
+        let lastTime = null;
+        let speedMultiplier = parseFloat(slider.value);
+
+        // --- CENTER OF MASS CALCULATIONS WITH DENSITY ---
+        const comMarker = document.getElementById('com-marker');
+
+        // Relative densities assigned to different materials
+        const DENSITY_WOOD = 0.6;
+        const DENSITY_PVC = 1.3;
+        const DENSITY_METAL = 5.0;
+        const DENSITY_BATTERY = 4.0;
+
+        // --- RING PROPERTIES ---
+        let RING_CX = parseFloat(ringXSlider.value);
+        const RING_CY = 285;
+        const RING_R_OUTER = 69;
+        const RING_R_INNER = 61;
+
+        // Initialize Ring SVG based on variables
+        function initRingSVG() {
+            const main = document.getElementById('ring-main');
+            const outer = document.getElementById('ring-outer');
+            const inner = document.getElementById('ring-inner');
+            const midR = (RING_R_OUTER + RING_R_INNER) / 2;
+            const strokeW = RING_R_OUTER - RING_R_INNER;
+
+            [main, outer, inner].forEach(c => {
+                c.setAttribute('cx', RING_CX);
+                c.setAttribute('cy', RING_CY);
+            });
+            main.setAttribute('r', midR);
+            main.setAttribute('stroke-width', strokeW);
+            outer.setAttribute('r', RING_R_OUTER);
+            inner.setAttribute('r', RING_R_INNER);
+        }
+        initRingSVG();
+
+        // 1. Static parts calculation
+        const staticParts = [
+            { name: "Ring", area: Math.PI * (RING_R_OUTER * RING_R_OUTER - RING_R_INNER * RING_R_INNER), density: DENSITY_PVC, cx: RING_CX, cy: RING_CY },
+            { name: "Main Board", area: 610 * 20, density: DENSITY_WOOD, cx: 395, cy: 210 },
+            { name: "Left Tip", area: 50 * 15, density: DENSITY_WOOD, cx: 85, cy: 207.5 },
+            { name: "Right Thigh", area: 65 * 215, density: DENSITY_WOOD, cx: 667.5, cy: 322.5 },
+            { name: "Battery Box", area: 80 * 50, density: DENSITY_BATTERY, cx: 650, cy: 175 },
+            // Right calf transformed by translate(700, 430) rotate(31.24)
+            { name: "Right Calf", area: 65 * 220, density: DENSITY_WOOD, cx: 615.16, cy: 507.20 },
+            { name: "Crane Bracket", area: 900, density: DENSITY_METAL, cx: 400, cy: 187.5 }
+        ];
+
+        let totalStaticMass = 0, staticCxSum = 0, staticCySum = 0;
+        staticParts.forEach(p => {
+            let mass = p.area * p.density; // Mass = Area * Density
+            totalStaticMass += mass;
+            staticCxSum += p.cx * mass;
+            staticCySum += p.cy * mass;
+        });
+
+        // 2. Dynamic Parts definitions (relative to crane pivot 400, 185)
+        const armArea = 20 * 70;
+        const armMass = armArea * DENSITY_METAL; // Metal arm
+        const armLocalCy = 25;     // Local center of arm
+
+        const diaArea = 60 * 60;
+        const diaMass = diaArea * DENSITY_WOOD; // Wooden diamond
+        const diaLocalCy = 92.426; // Local center of rotated diamond
+
+        const cranePivotX = 400;
+        const cranePivotY = 185;
+
+        // Update variables immediately when slider moves
+        slider.addEventListener('input', (e) => {
+            speedMultiplier = parseFloat(e.target.value);
+            display.textContent = speedMultiplier.toFixed(1) + 'x';
+        });
+
+        ringXSlider.addEventListener('input', (e) => {
+            RING_CX = parseFloat(e.target.value);
+            ringXDisplay.textContent = Math.round(RING_CX);
+
+            // Re-calculate static mass centers if ring moves
+            staticParts[0].cx = RING_CX;
+            totalStaticMass = 0;
+            staticCxSum = 0;
+            staticCySum = 0;
+            staticParts.forEach(p => {
+                let mass = p.area * p.density;
+                totalStaticMass += mass;
+                staticCxSum += p.cx * mass;
+                staticCySum += p.cy * mass;
+            });
+
+            // Update visuals
+            initRingSVG();
+        });
+
+        // --- GROUND CALCULATION LOGIC ---
+        function updateGround(ring, points) {
+            const candidates = [];
+
+            // 1. Tangents from each point to the circle
+            points.forEach(p => {
+                const dx = p.x - ring.cx;
+                const dy = p.y - ring.cy;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist <= ring.r) return;
+
+                const alpha = Math.atan2(dy, dx);
+                const beta = Math.acos(ring.r / dist);
+
+                // We want the tangent where the circle is "above" the line (ry <= m*rx + c)
+                [alpha + beta, alpha - beta].forEach(angle => {
+                    const tx = ring.cx + ring.r * Math.cos(angle);
+                    const ty = ring.cy + ring.r * Math.sin(angle);
+                    const dx_line = tx - p.x;
+                    if (Math.abs(dx_line) < 0.001) return;
+                    const m = (ty - p.y) / dx_line;
+                    const c = p.y - m * p.x;
+                    candidates.push({ m, c, p1: { x: tx, y: ty }, p2: p });
+                });
+            });
+
+            // 2. Filter valid lines (all parts are "above" the line)
+            // Note: SVG Y is down, so "above" means y <= mx + c
+            const validLines = candidates.filter(line => {
+                // Check if circle center is above
+                if (ring.cy > line.m * ring.cx + line.c + 0.1) return false;
+                // Check distance to ring center >= r
+                const dist = Math.abs(line.m * ring.cx - ring.cy + line.c) / Math.sqrt(line.m * line.m + 1);
+                if (dist < ring.r - 0.1) return false;
+                // Check all points are above
+                return points.every(p => p.y <= line.m * p.x + line.c + 0.1);
+            });
+
+            if (validLines.length === 0) return;
+
+            // 4. Pick the "lowest" valid ground (the one with the largest y-value at x=400)
+            validLines.sort((a, b) => (b.m * 400 + b.c) - (a.m * 400 + a.c));
+            const ground = validLines[0];
+
+            // 5. Robot-wide collision check
+            // Check key structural points against the chosen ground line
+            // Points are in robot-wrapper local coordinates
+            const checkPoints = [
+                { x: 60, y: 200 }, { x: 700, y: 200 }, { x: 700, y: 215 }, { x: 60, y: 215 }, // Main Board
+                { x: 610, y: 150 }, { x: 690, y: 150 }, // Battery Box Top
+                { x: 635, y: 215 }, { x: 635, y: 430 }  // Thigh
+            ];
+
+            const isColliding = checkPoints.some(p => p.y > ground.m * p.x + ground.c + 0.5);
+            document.getElementById('error-overlay').style.display = isColliding ? 'block' : 'none';
+
+            // 6. Update SVG
+            const gLine = document.getElementById('ground-line');
+            const gHatch = document.getElementById('ground-hatching');
+
+            const xStart = -2000, xEnd = 3000;
+            const yStart = ground.m * xStart + ground.c;
+            const yEnd = ground.m * xEnd + ground.c;
+
+            gLine.setAttribute('x1', xStart);
+            gLine.setAttribute('y1', yStart);
+            gLine.setAttribute('x2', xEnd);
+            gLine.setAttribute('y2', yEnd);
+
+            // Hatching removed for "simple straight line" as requested
+            gHatch.innerHTML = '';
+
+            return ground;
+        }
+
+        // Use requestAnimationFrame for smooth speed transitions without resetting
+        function animate(time) {
+            if (lastTime === null) {
+                lastTime = time;
+            }
+
+            // Calculate delta time in seconds
+            const deltaTime = (time - lastTime) / 1000;
+            lastTime = time;
+
+            // Increase angle continuously 
+            currentAngle += BASE_SPEED * speedMultiplier * deltaTime;
+
+            // Keep angle within 0-360 range to prevent extremely large float values over time
+            currentAngle = currentAngle % 360;
+
+            // Apply rotation to the crane group
+            craneGroup.setAttribute('transform', `rotate(${currentAngle}, 0, 0)`);
+
+            // --- Update COM Marker Position ---
+            const rad = currentAngle * Math.PI / 180;
+            const cosA = Math.cos(rad);
+            const sinA = Math.sin(rad);
+
+            // Calculate global positions of dynamic parts relative to robot-wrapper
+            const armGlobalX = cranePivotX - armLocalCy * sinA;
+            const armGlobalY = cranePivotY + armLocalCy * cosA;
+            const diaGlobalX = cranePivotX - diaLocalCy * sinA;
+            const diaGlobalY = cranePivotY + diaLocalCy * cosA;
+
+            // Weighted Average combining static mass and dynamically moving mass
+            const totalMass = totalStaticMass + armMass + diaMass;
+            const finalComX = (staticCxSum + armGlobalX * armMass + diaGlobalX * diaMass) / totalMass;
+            const finalComY = (staticCySum + armGlobalY * armMass + diaGlobalY * diaMass) / totalMass;
+
+            // Apply translation to the marker
+            comMarker.setAttribute('transform', `translate(${finalComX.toFixed(2)}, ${finalComY.toFixed(2)})`);
+
+            // --- Update Ground Line ---
+            // Calculate Calf Corners in Robot-Wrapper space
+            const legAngle = 30.17 * Math.PI / 180;
+            const cosL = Math.cos(legAngle);
+            const sinL = Math.sin(legAngle);
+            // Local corners: BR(0, 220), BL(-65, 220) relative to (700, 430)
+            const brX = 700 + (0 * cosL - 220 * sinL);
+            const brY = 430 + (0 * sinL + 220 * cosL);
+            const blX = 700 + (-65 * cosL - 220 * sinL);
+            const blY = 430 + (-65 * sinL + 220 * cosL);
+
+            const ground = updateGround(
+                { cx: RING_CX, cy: RING_CY, r: RING_R_OUTER },
+                [
+                    { x: brX, y: brY },
+                    { x: blX, y: blY }
+                ]
+            );
+
+            // --- Apply POV Transformations ---
+            const pov = povSelect.value;
+            if (pov === 'robot') {
+                // Fixed robot, moving ground (already handled inside updateGround if ground group is local)
+                // Ensure robot-wrapper is in its "neutral" position
+                robotWrapper.setAttribute('transform', 'translate(60, -80)');
+            } else {
+                // Fixed ground, moving robot
+                // 1. Calculate tilt angle
+                const tilt = -Math.atan(ground.m);
+                const tiltDeg = tilt * 180 / Math.PI;
+
+                // 2. We want the ground line in screen space to be at y=475 
+                // In world POV, the 'ground' group should NOT be transformed by updateGround 
+                // OR we move the ground group back to top-level. 
+                // For simplicity, let's keep it local but counter-transform if in world mode.
+
+                // Target horizontal ground at y_screen = 475
+                const targetScreenY = 475;
+                const cosT = Math.cos(tilt);
+
+                // The ground equation in robot space is y = mx + c.
+                // After rotate(tilt) and translate(tx, ty), a point (x, y) becomes:
+                // x' = tx + x*cosT - y*sinT
+                // y' = ty + x*sinT + y*cosT
+                // We want y' = targetScreenY for any point on the ground line (y = mx + c).
+                // ty + x*sinT + (mx + c)*cosT = targetScreenY
+                // ty + x*(sinT + m*cosT) + c*cosT = targetScreenY
+                // Since sinT + m*cosT = sinT + (tan(-tilt))*cosT = sinT - sinT = 0,
+                // ty = targetScreenY - c*cosT.
+
+                const ty = targetScreenY - ground.c * cosT;
+
+                // 3. Centering: We want the robot's center (x ≈ 380) to be at screen x = 400
+                // x_screen = tx + x_local*cosT - y_local*sinT
+                // tx = 400 - (380*cosT - 200*Math.sin(tilt))
+                const tx = 400 - (380 * cosT - 200 * Math.sin(tilt));
+
+                robotWrapper.setAttribute('transform', `translate(${tx}, ${ty}) rotate(${tiltDeg}, 0, 0)`);
+
+                // Force ground line to be horizontal in screen space if needed, 
+                // but ty calculation already handles alignment.
+            }
+
+            // Request next frame
+            requestAnimationFrame(animate);
+        }
+
+        // Start animation loop
+        requestAnimationFrame(animate);
+    </script>
+
+</body>
+
+</html>

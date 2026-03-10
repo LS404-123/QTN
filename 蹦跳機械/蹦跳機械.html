@@ -203,13 +203,6 @@
                     </g>
                 </g>
 
-                <!-- COM TRAJECTORY TRAIL (screen-space) -->
-                <polyline id="com-trail" fill="none" stroke="#e91e63" stroke-width="1.5" stroke-opacity="0.5"
-                    points="" />
-                <circle id="com-center-dot" cx="-999" cy="-999" r="6" fill="#ff6f00" stroke="#fff" stroke-width="1.5" />
-                <text id="com-center-label" x="-999" y="-999" fill="#ff6f00" font-size="11" font-family="sans-serif"
-                    font-weight="bold" text-anchor="middle" dy="-9">avg</text>
-
                 <!-- Error Overlay -->
                 <g id="error-overlay" style="display: none;">
                     <rect x="0" y="0" width="800" height="600" fill="rgba(255,0,0,0.15)" />
@@ -234,9 +227,6 @@
                 <option value="world">World centric</option>
                 <option value="robot">Robot centric</option>
             </select>
-
-            <label>COM Disp:</label>
-            <div class="speed-value" id="comDispDisplay" style="width:70px">—</div>
         </div>
     </div>
 
@@ -255,14 +245,6 @@
         let currentAngle = 0;
         let lastTime = null;
         let speedMultiplier = parseFloat(slider.value);
-        let lastComY = null; // Track COM for velocity calculation
-
-        // COM trajectory buffer
-        const COM_TRAIL_MAX = 100;
-        const comTrailBuffer = [];
-        const comTrail = document.getElementById('com-trail');
-        const comCenterDot = document.getElementById('com-center-dot');
-        const comCenterLabel = document.getElementById('com-center-label');
 
         // --- CENTER OF MASS CALCULATIONS WITH DENSITY ---
         const comMarker = document.getElementById('com-marker');
@@ -275,11 +257,9 @@
 
         // --- RING PROPERTIES ---
         let RING_CX = parseFloat(ringXSlider.value);
-        const BOARD_ATTACH_Y = 215; // Bottom of yellow board
+        const RING_CY = 285;
         const RING_R_OUTER = 69;
         const RING_R_INNER = 61;
-        const RING_CY = BOARD_ATTACH_Y + RING_R_OUTER; // 215 + 69 = 284 (Adjusted from 285)
-        const ringGroup = document.getElementById('left-ring');
 
         // Initialize Ring SVG based on variables
         function initRingSVG() {
@@ -313,18 +293,12 @@
         ];
 
         let totalStaticMass = 0, staticCxSum = 0, staticCySum = 0;
-        function updateStaticMass() {
-            totalStaticMass = 0;
-            staticCxSum = 0;
-            staticCySum = 0;
-            staticParts.forEach(p => {
-                let mass = p.area * p.density;
-                totalStaticMass += mass;
-                staticCxSum += p.cx * mass;
-                staticCySum += p.cy * mass;
-            });
-        }
-        updateStaticMass();
+        staticParts.forEach(p => {
+            let mass = p.area * p.density; // Mass = Area * Density
+            totalStaticMass += mass;
+            staticCxSum += p.cx * mass;
+            staticCySum += p.cy * mass;
+        });
 
         // 2. Dynamic Parts definitions (relative to crane pivot 400, 185)
         const armArea = 20 * 70;
@@ -338,16 +312,6 @@
         const cranePivotX = 400;
         const cranePivotY = 185;
 
-        // --- COMPRESSION SETTINGS (Initialized after mass constants) ---
-        const neutralArmY = 185;
-        const neutralDiaY = 185;
-        const neutralTotalMass = totalStaticMass + armMass + diaMass;
-        const neutralComY = (staticCySum + neutralArmY * armMass + neutralDiaY * diaMass) / neutralTotalMass;
-
-        // Sensitivities for position and velocity
-        const K_POS = 0.005;
-        const K_VEL = 0.0005;
-
         // Update variables immediately when slider moves
         slider.addEventListener('input', (e) => {
             speedMultiplier = parseFloat(e.target.value);
@@ -360,7 +324,15 @@
 
             // Re-calculate static mass centers if ring moves
             staticParts[0].cx = RING_CX;
-            updateStaticMass();
+            totalStaticMass = 0;
+            staticCxSum = 0;
+            staticCySum = 0;
+            staticParts.forEach(p => {
+                let mass = p.area * p.density;
+                totalStaticMass += mass;
+                staticCxSum += p.cx * mass;
+                staticCySum += p.cy * mass;
+            });
 
             // Update visuals
             initRingSVG();
@@ -490,78 +462,13 @@
             const blX = 700 + (-65 * cosL - 220 * sinL);
             const blY = 430 + (-65 * sinL + 220 * cosL);
 
-            // --- Calculate Ground & Apply Velocity-Based Compression ---
-            // 1. Initial ground estimation to get the current tilt and intercept
-            let groundObj = updateGround(
+            const ground = updateGround(
                 { cx: RING_CX, cy: RING_CY, r: RING_R_OUTER },
                 [
                     { x: brX, y: brY },
                     { x: blX, y: blY }
                 ]
             );
-
-            // Safety check: fallback to horizontal ground if none found
-            if (!groundObj) groundObj = { m: 0, c: 354 };
-
-            // 2. Calculate Position Delta and Velocity
-            const deltaY = finalComY - neutralComY;
-            let velocityY = 0;
-            if (lastTime !== null && lastComY !== null) {
-                velocityY = (finalComY - lastComY) / deltaTime;
-            }
-            lastComY = finalComY;
-
-            // 3. Map RAW signal to compression factor
-            // Raw signal: positive when COM is low or moving down
-            const rawSignal = (deltaY * K_POS + velocityY * K_VEL);
-
-            // Transform raw signal (approx -1 to 1 range) into 0.7 to 1.1 range
-            // We use a sigmoid-like transformation (tanh) to handle large values smoothly
-            // mapping [-inf, inf] -> [0.7, 1.1]
-            // compression = 0.9 + 0.2 * tanh(-rawSignal * 2) 
-            const compressionFactor = 1.0 + 0.5 * Math.tanh(-rawSignal * 2);
-
-            // 4. Apply visual squash to the ring group STUCK to the board
-            // The ring scales from the BOARD_ATTACH_Y (215)
-            const groundTiltDeg = -Math.atan(groundObj.m) * 180 / Math.PI;
-            ringGroup.setAttribute('transform', `translate(${RING_CX}, ${BOARD_ATTACH_Y}) rotate(${-groundTiltDeg}) scale(1, ${compressionFactor}) rotate(${groundTiltDeg}) translate(${-RING_CX}, ${-BOARD_ATTACH_Y})`);
-
-            // 5. Dynamic Center Tracking: Center of squashed ring shifts
-            // Origin P(RING_CX, BOARD_ATTACH_Y) moved to C(RING_CX, RING_CY)
-            // Local vector PC = (0, RING_R_OUTER)
-            // After rotate -> scale -> rotate, the vector PC becomes PC'
-            const tiltRad = -Math.atan(groundObj.m);
-            const cosT = Math.cos(tiltRad);
-            const sinT = Math.sin(tiltRad);
-            // Local P->C vector rotated by -groundTiltDeg
-            const rx0 = 0 * cosT - RING_R_OUTER * sinT;
-            const ry0 = 0 * sinT + RING_R_OUTER * cosT;
-            // Scall by compressionFactor in its local 'down' direction
-            const rx1 = rx0;
-            const ry1 = ry0 * compressionFactor;
-            // Rotate back by +groundTiltDeg
-            const cosT2 = Math.cos(-tiltRad);
-            const sinT2 = Math.sin(-tiltRad);
-            const shiftedCX = RING_CX + (rx1 * cosT2 - ry1 * sinT2);
-            const shiftedCY = BOARD_ATTACH_Y + (rx1 * sinT2 + ry1 * cosT2);
-
-            // 6. FINAL Ground Update (Robot follows the shifted compressed shape)
-            const compressedRadius = RING_R_OUTER * compressionFactor;
-            const finalGround = updateGround(
-                { cx: shiftedCX, cy: shiftedCY, r: compressedRadius },
-                [
-                    { x: brX, y: brY },
-                    { x: blX, y: blY }
-                ]
-            );
-
-            // 7. Update COM accuracy (Ring mass center shifts)
-            staticParts[0].cx = shiftedCX;
-            staticParts[0].cy = shiftedCY;
-            updateStaticMass();
-
-            // Re-assign to 'ground' for POV calculations
-            const ground = finalGround || groundObj;
 
             // --- Apply POV Transformations ---
             const pov = povSelect.value;
@@ -596,49 +503,16 @@
 
                 const ty = targetScreenY - ground.c * cosT;
 
-                // 3. Center on the COM so the robot body shifts as COM moves
-                // x_screen = tx + finalComX*cosT - finalComY*sinT = 400
-                // => tx = 400 - (finalComX*cosT - finalComY*sinT)
-                const sinTilt = Math.sin(tilt);
-                const tx = 400 - (finalComX * cosT - finalComY * sinTilt);
-
-                // Displacement from the pre-calculated neutral COM X
-                const neutralComX = (staticCxSum + cranePivotX * armMass + cranePivotX * diaMass) / (totalStaticMass + armMass + diaMass);
-                const displacement = finalComX - neutralComX;
-                document.getElementById('comDispDisplay').textContent = (displacement >= 0 ? '+' : '') + displacement.toFixed(1) + 'px';
+                // 3. Centering: We want the robot's center (x ≈ 380) to be at screen x = 400
+                // x_screen = tx + x_local*cosT - y_local*sinT
+                // tx = 400 - (380*cosT - 200*Math.sin(tilt))
+                const tx = 400 - (380 * cosT - 200 * Math.sin(tilt));
 
                 robotWrapper.setAttribute('transform', `translate(${tx}, ${ty}) rotate(${tiltDeg}, 0, 0)`);
 
                 // Force ground line to be horizontal in screen space if needed, 
                 // but ty calculation already handles alignment.
             }
-
-            // --- COM Trail in Screen Coordinates ---
-            // Apply current wrapper transform to get screen-space COM position
-            const wAttr = robotWrapper.getAttribute('transform') || '';
-            const wTMatch = wAttr.match(/translate\(([-\d.eE+]+),\s*([-\d.eE+]+)\)/);
-            const wRMatch = wAttr.match(/rotate\(([-\d.eE+]+)/);
-            const wTx = wTMatch ? parseFloat(wTMatch[1]) : 60;
-            const wTy = wTMatch ? parseFloat(wTMatch[2]) : -80;
-            const wRad = wRMatch ? parseFloat(wRMatch[1]) * Math.PI / 180 : 0;
-            const wC = Math.cos(wRad), wS = Math.sin(wRad);
-            const screenComX = wTx + finalComX * wC - finalComY * wS;
-            const screenComY = wTy + finalComX * wS + finalComY * wC;
-
-            comTrailBuffer.push({ x: screenComX, y: screenComY });
-            if (comTrailBuffer.length > COM_TRAIL_MAX) comTrailBuffer.shift();
-
-            comTrail.setAttribute('points', comTrailBuffer.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
-
-            const tSumX = comTrailBuffer.reduce((s, p) => s + p.x, 0);
-            const tSumY = comTrailBuffer.reduce((s, p) => s + p.y, 0);
-            const avgX = tSumX / comTrailBuffer.length;
-            const avgY = tSumY / comTrailBuffer.length;
-            comCenterDot.setAttribute('cx', avgX.toFixed(2));
-            comCenterDot.setAttribute('cy', avgY.toFixed(2));
-            comCenterLabel.setAttribute('x', avgX.toFixed(2));
-            comCenterLabel.setAttribute('y', avgY.toFixed(2));
-            comCenterLabel.textContent = `(${avgX.toFixed(1)}, ${avgY.toFixed(1)})`;
 
             // Request next frame
             requestAnimationFrame(animate);

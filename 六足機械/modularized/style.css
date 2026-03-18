@@ -1,0 +1,176 @@
+        :root {
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --bg: #f0f4f8;
+            --card-bg: #ffffff;
+            --text-main: #1a202c;
+            --text-muted: #475569;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 2rem 1rem;
+            color: var(--text-main);
+        }
+
+        h2 {
+            margin-top: 0;
+            color: var(--text-main);
+            font-weight: 700;
+        }
+
+        #simCanvas {
+            background-color: #0f172a;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+            margin-bottom: 24px;
+            max-width: 100%;
+            height: auto;
+        }
+
+        .control-panel {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            width: 100%;
+            max-width: 960px;
+            box-sizing: border-box;
+        }
+
+        .control-section {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            padding: 16px;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .control-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title {
+            font-weight: 800;
+            color: var(--text-muted);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.1rem;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1 1 calc(50% - 10px);
+            background: #f8fafc;
+            padding: 8px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            min-height: 40px;
+            box-sizing: border-box;
+        }
+
+        /* Fixed radius/hole selection layout */
+        .hole-selector-group {
+            padding-right: 8px;
+        }
+
+        .segmented-control {
+            display: flex;
+            background: #e2e8f0;
+            padding: 3px;
+            border-radius: 8px;
+            flex-grow: 1;
+            gap: 2px;
+        }
+
+        .hole-btn {
+            flex: 1;
+            padding: 6px 4px;
+            font-size: 12px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: 6px;
+            font-weight: 700;
+            box-shadow: none;
+            transition: all 0.2s;
+        }
+
+        .hole-btn.active {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .hole-btn:hover:not(.active) {
+            background: rgba(255,255,255,0.5);
+        }
+
+        button {
+            padding: 10px 16px;
+            font-size: 13px;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--primary);
+            color: white;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary {
+            background-color: #64748b;
+        }
+
+        button:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .disabled-group {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        label {
+            width: 90px;
+            font-size: 13px;
+            color: var(--text-muted);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .val-display {
+            min-width: 80px;
+            text-align: right;
+            color: var(--primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+        }
+
+        @media (max-width: 850px) {
+            .slider-group {
+                flex: 1 1 100%;
+            }
+        }

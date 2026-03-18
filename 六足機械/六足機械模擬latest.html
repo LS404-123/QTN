@@ -224,10 +224,10 @@
                 <input type="range" id="lBlueSlider" min="40" max="100" step="1" value="55">
                 <span class="val-display" id="lBlueVal">55</span>
             </div>
-            <div class="slider-group">
+            <div class="slider-group" style="opacity: 0.6; pointer-events: none;" title="固鎖以配合 SVG 比例 (36:45)">
                 <label for="lFootSlider">腳長 (L<sub>foot</sub>)</label>
-                <input type="range" id="lFootSlider" min="10" max="60" step="1" value="25">
-                <span class="val-display" id="lFootVal">25</span>
+                <input type="range" id="lFootSlider" min="10" max="60" step="1" value="20" disabled>
+                <span class="val-display" id="lFootVal">20 (Fixed)</span>
             </div>
             <div class="slider-group">
                 <label for="rSlider">曲柄半徑 (R)</label>
@@ -260,7 +260,7 @@
         let R = 5.0 * globalScale;
         let L_leg = 25.0 * globalScale;
         let L_blue = 55.0 * globalScale;
-        let L_foot = 25.0 * globalScale;
+        let L_foot = 25.0 * (36 / 45) * globalScale; // 鎖定與 SVG 的幾何比例 (腳尖:支點) = 36:45
 
         let theta = 0;
         let phaseDiff = Math.PI; // 相位差預設 180 度
@@ -377,6 +377,36 @@
 
         // --- Drawing Core ---
 
+        const legSVGPath = new Path2D("M 21, 20 A 9,9 0 0, 1 39, 20 L 39, 72.6 Q 39, 88, 54.58, 88 A 25, 13 0 1, 1 5.42, 88 Q 21, 88, 21, 72.6 Z");
+        const rodSVGPath = new Path2D("M 5, 10 A 5,5 0 0, 1 15, 10 L 15, 102 A 5,5 0 0, 1 5, 102 Z");
+
+        function drawSVGLink(p1, p2, svgPath, h1x, h1y, h2x, h2y, strokeColor, fillColor, isFar) {
+            if (!p1 || !p2) return;
+            const m1 = mapCoords(p1), m2 = mapCoords(p2);
+            const dx = m2.x - m1.x, dy = m2.y - m1.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const svgDist = Math.sqrt(Math.pow(h2x - h1x, 2) + Math.pow(h2y - h1y, 2));
+            const scale = dist / svgDist;
+            const angle = Math.atan2(dy, dx);
+            const svgAngle = Math.atan2(h2y - h1y, h2x - h1x);
+
+            ctx.save();
+            ctx.translate(m1.x, m1.y);
+            ctx.rotate(angle - svgAngle);
+            ctx.scale(scale, scale);
+            ctx.translate(-h1x, -h1y);
+
+            ctx.globalAlpha = isFar ? 0.35 : 1.0;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 1.5 / scale;
+            if (fillColor) {
+                ctx.fillStyle = fillColor;
+                ctx.fill(svgPath);
+            }
+            ctx.stroke(svgPath);
+            ctx.restore();
+        }
+
         function drawLine(p1, p2, color, width) {
             if (!p1 || !p2) return;
             const m1 = mapCoords(p1), m2 = mapCoords(p2);
@@ -422,13 +452,18 @@
             const widthScale = isFar ? 0.8 : 1.0;
 
             drawLine(C_crank, data.ML, crankColor, 4 * widthScale);
-            drawLine(data.FT, data.ML, linkColor, 6 * widthScale);
-            drawLine(Pf, data.MT, linkColor, 6 * widthScale);
-            drawLine(data.ML, data.RT, linkColor, 6 * widthScale);
+            
+            // 直杆 (Holes at cy=10, 102. Spacing = 92)
+            const rodFill = '#3b82f6';
+            drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, '#1d4ed8', rodFill, isFar);
+            drawSVGLink(Pf, data.MT, rodSVGPath, 10, 10, 10, 102, '#1d4ed8', rodFill, isFar);
+            drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, '#1d4ed8', rodFill, isFar);
 
-            drawLine(data.FT, data.foot_f, legColor, 12 * widthScale);
-            drawLine(data.MT, data.foot_m, legColor, 12 * widthScale);
-            drawLine(data.RT, data.foot_r, legColor, 12 * widthScale);
+            // 腿 (Holes at cy=20, 65. Spacing = 45)
+            const legFill = '#facc15';
+            drawSVGLink(data.FT, Pf, legSVGPath, 30, 20, 30, 65, '#b45309', legFill, isFar);
+            drawSVGLink(data.MT, data.ML, legSVGPath, 30, 20, 30, 65, '#b45309', legFill, isFar);
+            drawSVGLink(data.RT, Pr, legSVGPath, 30, 20, 30, 65, '#b45309', legFill, isFar);
 
             drawPoint(data.ML, jointColor, 4 * widthScale);
             drawPoint(data.FT, jointColor, 4 * widthScale);
@@ -843,9 +878,16 @@
             });
         };
 
-        setupSlider('lLegSlider', 'lLegVal', (v) => L_leg = v);
+        setupSlider('lLegSlider', 'lLegVal', (v) => {
+            L_leg = v;
+            // 同步 L_foot 以強制維持 SVG 視覺幾何的正確比例 (尖端與支點的比例 = 36:45)
+            L_foot = L_leg * (36 / 45);
+            document.getElementById('lFootSlider').value = L_foot / globalScale;
+            document.getElementById('lFootVal').innerText = (L_foot / globalScale).toFixed(1) + " (Fixed)";
+        });
         setupSlider('lBlueSlider', 'lBlueVal', (v) => L_blue = v);
-        setupSlider('lFootSlider', 'lFootVal', (v) => L_foot = v);
+        // L_footSlider 不再負責手動調整，已被鎖死
+        setupSlider('lFootSlider', 'lFootVal', (v) => {}); 
         setupSlider('rSlider', 'rVal', (v) => R = v);
 
         // Init

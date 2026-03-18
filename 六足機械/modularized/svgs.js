@@ -29,7 +29,7 @@ async function loadExternalSVGs() {
             const parser = new DOMParser();
             const doc = parser.parseFromString(htmlStr, "text/html");
             let dString = "";
-            
+
             // 處理 <path>
             doc.querySelectorAll('path').forEach(p => {
                 dString += p.getAttribute('d') + " ";
@@ -55,9 +55,9 @@ async function loadExternalSVGs() {
                 let cx = parseFloat(c.getAttribute('cx') || 0);
                 let cy = parseFloat(c.getAttribute('cy') || 0);
                 let r = parseFloat(c.getAttribute('r') || 0);
-                dString += `M ${cx-r},${cy} a ${r},${r} 0 1,0 ${2*r},0 a ${r},${r} 0 1,0 ${-2*r},0 `;
+                dString += `M ${cx - r},${cy} a ${r},${r} 0 1,0 ${2 * r},0 a ${r},${r} 0 1,0 ${-2 * r},0 `;
             });
-            
+
             return new Path2D(dString.trim());
         };
 

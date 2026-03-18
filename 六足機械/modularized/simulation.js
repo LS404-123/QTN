@@ -41,18 +41,18 @@ function updateCrankPosition() {
 
     // Bottom tab is at x=18.5, crank hole is at x=25 (difference = 6.5)
     C_crank.x = gearboxShiftX + (6.5 * customGearboxScale / scale);
-    C_crank.y = -bodyYOffset + (12.5 * customGearboxScale / scale);
+    C_crank.y = -bodyYOffset + 2 + (12.5 * customGearboxScale / scale);
 }
 
 // Initial calculation
 updateCrankPosition();
 
 let theta = 0;
-let phaseDiff = Math.PI; // 相位差預設 180 度
+let phaseDiff = 0; // 相位差預設 0 度 (User requested)
 let isPlaying = true;
 let showPaths = false;
 let simSpeed = -0.1;
-let gravityScale = 1.6;
+let gravityScale = 1.0;
 let povMode = 'world';
 
 let paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
@@ -140,7 +140,37 @@ function extendPoint(P_top, P_bottom, extLen) {
     };
 }
 
-function getLegPositions(angle) {
+/**
+ * 計算橢圓形腳部在給定地面斜率 m 下的最底端接觸點 (相對機器坐標系)
+ * 腳部幾何: rx=25, ry=13, 中心距離底部孔位 23, 總長(含墊片)參考 SVGs.js
+ **/
+function getEllipticFootPoint(P_top, P_bottom, m = 0) {
+    const dx = P_bottom.x - P_top.x, dy = P_bottom.y - P_top.y;
+    const L_curr = Math.sqrt(dx * dx + dy * dy);
+    if (L_curr === 0) return P_bottom;
+
+    const phi = Math.atan2(dy, dx);
+    const rot = phi - Math.PI / 2; // 橢圓局部 X 軸與機器 X 軸夾角
+
+    // 縮放比例基於 L_leg/45
+    const s = L_curr / 45.0;
+    const a = 25 * s;
+    const b = 13 * s;
+    const centerDist = 23 * s;
+
+    // 橢圓中心位置
+    const Cx = P_bottom.x + (dx / L_curr) * centerDist;
+    const Cy = P_bottom.y + (dy / L_curr) * centerDist;
+
+    // 計算在斜率 m 下，橢圓中心到切線的垂直距離 h (y = mx + c 型式)
+    // 公式: h = sqrt( a^2 * (sin(rot) - m*cos(rot))^2 + b^2 * (cos(rot) + m*sin(rot))^2 )
+    const sinR = Math.sin(rot), cosR = Math.cos(rot);
+    const h = Math.sqrt(Math.pow(a * (sinR - m * cosR), 2) + Math.pow(b * (cosR + m * sinR), 2));
+
+    return { x: Cx, y: Cy - h };
+}
+
+function getLegPositions(angle, groundM = 0) {
     const ML = {
         x: C_crank.x + R * Math.cos(angle),
         y: C_crank.y + R * Math.sin(angle)
@@ -151,9 +181,9 @@ function getLegPositions(angle) {
 
     if (!MT || !FT || !RT) return null;
 
-    const foot_f = extendPoint(FT, Pf, L_foot);
-    const foot_m = extendPoint(MT, ML, L_foot);
-    const foot_r = extendPoint(RT, Pr, L_foot);
+    const foot_f = getEllipticFootPoint(FT, Pf, groundM);
+    const foot_m = getEllipticFootPoint(MT, ML, groundM);
+    const foot_r = getEllipticFootPoint(RT, Pr, groundM);
 
     return { ML, MT, FT, RT, foot_f, foot_m, foot_r };
 }
@@ -225,33 +255,51 @@ function drawPoint(p, color, radius) {
 
 function renderSide(data, isFar) {
     const alpha = isFar ? 0.25 : 1.0;
-    const linkColor = `rgba(96, 165, 250, ${alpha})`;
-    const legColor = `rgba(245, 158, 11, ${alpha})`;
     const jointColor = `rgba(30, 41, 59, ${alpha})`;
     const widthScale = isFar ? 0.8 : 1.0;
 
-    // 曲柄 (Hexagon center at 8.7, 8.7. First hole at 8.7, 15.2)
-    const crankFill = '#e2e8f0'; // Silver-like appearance
-    const crankStroke = '#94a3b8';
-    if (typeof crankSVGPath !== 'undefined') {
-        drawSVGLink(C_crank, data.ML, crankSVGPath, 8.7, 8.7, 8.7, currentCrankHoleY, crankStroke, crankFill, isFar);
+    // Define drawing parts
+    const drawCrank = () => {
+        const crankFill = '#e2e8f0';
+        const crankStroke = '#94a3b8';
+        if (typeof crankSVGPath !== 'undefined') {
+            drawSVGLink(C_crank, data.ML, crankSVGPath, 8.7, 8.7, 8.7, currentCrankHoleY, crankStroke, crankFill, isFar);
+        } else {
+            const crankColor = `rgba(203, 213, 225, ${alpha})`;
+            drawLine(C_crank, data.ML, crankColor, 4 * widthScale);
+        }
+    };
+
+    const drawRods = () => {
+        const rodFill = '#3b82f6';
+        const rodStroke = '#1d4ed8';
+        drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar);
+        drawSVGLink(Pf, data.MT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar);
+        drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar);
+    };
+
+    const drawLegs = () => {
+        const legFill = '#facc15';
+        const legStroke = '#b45309';
+        drawSVGLink(data.FT, Pf, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar);
+        drawSVGLink(data.MT, data.ML, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar);
+        drawSVGLink(data.RT, Pr, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar);
+    };
+
+    // Execute drawing based on final depth requirements
+    if (isFar) {
+        // Far Side: Rod (Bottom) → Leg (Middle) → Crank (Top)
+        drawRods();
+        drawLegs();
+        drawCrank();
     } else {
-        const crankColor = `rgba(203, 213, 225, ${alpha})`;
-        drawLine(C_crank, data.ML, crankColor, 4 * widthScale);
+        // Near Side: Crank (Bottom) → Leg (Middle) → Rod (Top)
+        drawCrank();
+        drawLegs();
+        drawRods();
     }
 
-    // 直杆 (Holes at cy=10, 102. Spacing = 92)
-    const rodFill = '#3b82f6';
-    drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, '#1d4ed8', rodFill, isFar);
-    drawSVGLink(Pf, data.MT, rodSVGPath, 10, 10, 10, 102, '#1d4ed8', rodFill, isFar);
-    drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, '#1d4ed8', rodFill, isFar);
-
-    // 腿 (Holes at cy=20, 65. Spacing = 45)
-    const legFill = '#facc15'; // Yellow fill
-    drawSVGLink(data.FT, Pf, legSVGPath, 30, 20, 30, 65, '#b45309', legFill, isFar);
-    drawSVGLink(data.MT, data.ML, legSVGPath, 30, 20, 30, 65, '#b45309', legFill, isFar);
-    drawSVGLink(data.RT, Pr, legSVGPath, 30, 20, 30, 65, '#b45309', legFill, isFar);
-
+    // Joints always on top
     drawPoint(data.ML, jointColor, 4 * widthScale);
     drawPoint(data.FT, jointColor, 4 * widthScale);
     drawPoint(data.MT, jointColor, 4 * widthScale);
@@ -264,8 +312,9 @@ function renderSide(data, isFar) {
 function renderFrame(currentTheta, recordPath) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const near = getLegPositions(currentTheta);
-    const far = getLegPositions(currentTheta + phaseDiff);
+    // 使用前一幀的地面斜率來預估腳尖位置，確保平滑度
+    const near = getLegPositions(currentTheta, smoothedGround.m);
+    const far = getLegPositions(currentTheta + phaseDiff, smoothedGround.m);
 
     if (near && far) {
         const allFeet = [
@@ -489,8 +538,8 @@ function renderFrame(currentTheta, recordPath) {
 
         ctx.scale(customGearboxScale, customGearboxScale);
 
-        // 以底部小方塊 (x=18.5, y=25) 為中心對齊車體
-        ctx.translate(-18.5, -25 - 2);
+        // 以底部小方塊 (x=18.5, y=27) 為中心對齊車體
+        ctx.translate(-18.5, -27);
 
         // User 需求: Filled the gearbox with grey color and use creamy white as boarder line color
         ctx.fillStyle = '#8a8d91';         // 灰色 (Grey color)
@@ -684,7 +733,7 @@ document.getElementById('speedSlider').addEventListener('input', (e) => {
         speedText = `Battery: ${pct}%`;
     }
     document.getElementById('speedVal').innerText = speedText;
-    gravityScale = 1.6 + (speedMagnitude * 5);
+    gravityScale = 1.0 + (speedMagnitude * 5);
 });
 
 document.getElementById('angleSlider').addEventListener('input', (e) => {

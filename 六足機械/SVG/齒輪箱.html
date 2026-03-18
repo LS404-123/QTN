@@ -6,7 +6,7 @@
     <title>齒輪箱 Gearbox</title>
     <style>
         body {
-            background: #1a1a2e;
+            background: #1A1A2E;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -17,7 +17,7 @@
 </head>
 
 <body>
-    <svg viewBox="-5 -5 70 35" width="700" height="350" xmlns="http://www.w3.org/2000/svg" style="background:#0d1b2a">
+    <svg viewBox="-5 -5 70 35" width="700" height="350" xmlns="http://www.w3.org/2000/svg" style="background:#1a1a2e">
         <!-- 
             本體總長: 50.00 mm
             底部為水平基準線 (y=25)
@@ -36,7 +36,7 @@
             - y=5.66 - 4.34 = 1.32: 右方最高點 (頂邊斜線的右端)
             - y=0: 左上角最高點 (頂邊斜線的左端，這裡稍微斜向上接R2圓角)
         -->
-        <g id="main-body" fill="none" stroke="#e0e8f0" stroke-width="0.35" stroke-linejoin="round">
+        <g id="main-body" fill="#8a8d91" stroke="#fdfbf7" stroke-width="0.35" stroke-linejoin="round">
             <!-- 外圍輪廓 -->
             <!-- 外圍主體輪廓 -->
             <path d="
@@ -68,20 +68,24 @@
 
         <!-- ── Circle holes ───────────────────────────────────── -->
         <!-- 左孔: x = 11.50, y = 12.5 -->
-        <g id="hole-left" fill="none" stroke="#e0e8f0" stroke-width="0.35">
-            <circle cx="11.50" cy="12.50" r="3.50" />
-            <circle cx="11.50" cy="12.50" r="1.50" />
+        <g id="hole-left" stroke="#fdfbf7" stroke-width="0.35">
+            <!-- 外圓環 (Annulus area) -->
+            <circle cx="11.50" cy="12.50" r="3.50" fill="#808082" />
+            <!-- 內圓 (Inner circle) -->
+            <circle cx="11.50" cy="12.50" r="1.50" fill="#000000" />
         </g>
 
         <!-- 右孔: x = 11.50 + 13.50 = 25.00, y = 12.5 -->
-        <g id="hole-right" fill="none" stroke="#e0e8f0" stroke-width="0.35">
-            <circle cx="25.00" cy="12.50" r="3.50" />
-            <circle cx="25.00" cy="12.50" r="1.50" />
+        <g id="hole-right" stroke="#fdfbf7" stroke-width="0.35">
+            <!-- 外圓環 (Annulus area) -->
+            <circle cx="25.00" cy="12.50" r="3.50" fill="#808082" />
+            <!-- 內圓 (Inner circle) -->
+            <circle cx="25.00" cy="12.50" r="1.50" fill="#000000" />
         </g>
 
         <!-- ── Bottom key (小鍵) ─────────────────────────────── -->
         <!-- 位於 x=18.50, 但是這其實指中心線，方塊大約為 5x1 -->
-        <g id="bottom-key" fill="none" stroke="#e0e8f0" stroke-width="0.35">
+        <g id="bottom-key" fill="#8a8d91" stroke="#fdfbf7" stroke-width="0.35">
             <rect x="16" y="24" width="5" height="1" />
             <!-- 十字標記/中心線 -->
             <line x1="18.50" y1="25" x2="18.50" y2="21.5" />

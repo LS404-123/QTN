@@ -23,7 +23,7 @@ let R = crankDistances[0]; // Initial radius for Hole 1
 
 let L_leg = 25.0 * globalScale;
 let L_blue = 55.0 * globalScale;
-let L_foot = 25.0 * (36 / 45) * globalScale; // 鎖定與 SVG 的幾何比例 (腳尖:支點) = 36:45
+let L_foot = 25.0 * (41.54 / 45) * globalScale; // 鎖定與 SVG 的幾何比例 (腳尖:支點) = 41.54:45
 let gearboxShiftX = 0;
 
 // Viewport Settings
@@ -142,32 +142,54 @@ function extendPoint(P_top, P_bottom, extLen) {
 
 /**
  * 計算橢圓形腳部在給定地面斜率 m 下的最底端接觸點 (相對機器坐標系)
- * 腳部幾何: rx=25, ry=13, 中心距離底部孔位 23, 總長(含墊片)參考 SVGs.js
- **/
+ * 幾何原理：基於橢圓的支撐函數 (Support Function) 與方向向量投影
+ * 
+ * @param {Object} P_top    腿部上端孔位 (由 FT/MT/RT 傳入)
+ * @param {Object} P_bottom 腿部下端孔位 (由 Pf/ML/Pr 傳入)，即組件支點
+ * @param {number} m        目前地面的斜率 (dy/dx)
+ * @returns {Object}        橢圓腳部與地面碰撞的精確切點 {x, y}
+ */
 function getEllipticFootPoint(P_top, P_bottom, m = 0) {
+    // 1. 計算腿部向量與當前物理長度
     const dx = P_bottom.x - P_top.x, dy = P_bottom.y - P_top.y;
     const L_curr = Math.sqrt(dx * dx + dy * dy);
     if (L_curr === 0) return P_bottom;
 
+    // 2. 確定腿部旋轉角度 (phi 為世界坐標夾角)
     const phi = Math.atan2(dy, dx);
-    const rot = phi - Math.PI / 2; // 橢圓局部 X 軸與機器 X 軸夾角
+    const rot = phi - Math.PI / 2; // 計算橢圓局部坐標系與世界座標系的旋轉差
 
-    // 縮放比例基於 L_leg/45
-    const s = L_curr / 45.0;
-    const a = 25 * s;
-    const b = 13 * s;
-    const centerDist = 23 * s;
+    // 3. 根據 L_leg 與 SVG 原始設計 (45mm 孔距) 進行比例縮放
+    const s = L_curr / 45.0;            // 幾何縮放因子
+    const a = 25 * s;                   // 橢圓長軸半徑 (對應 SVG 的 rx=25)
+    const b = 13 * s;                   // 橢圓短軸半徑 (對應 SVG 的 ry=13)
+    const centerDist = 28.54 * s;       // 支點 P_bottom 到橢圓幾何中心的精確偏移 (根據高度 15.37mm 標定)
 
-    // 橢圓中心位置
+    // 4. 在世界坐標系中定位橢圓中心的坐標 (Cx, Cy)
     const Cx = P_bottom.x + (dx / L_curr) * centerDist;
     const Cy = P_bottom.y + (dy / L_curr) * centerDist;
 
-    // 計算在斜率 m 下，橢圓中心到切線的垂直距離 h (y = mx + c 型式)
-    // 公式: h = sqrt( a^2 * (sin(rot) - m*cos(rot))^2 + b^2 * (cos(rot) + m*sin(rot))^2 )
+    // 5. 計算地面法線在橢圓局部坐標系中的投影分量
+    // 地面法線向量 n = (-m, 1)，我們將其旋轉至橢圓局部軸向 u, v
     const sinR = Math.sin(rot), cosR = Math.cos(rot);
-    const h = Math.sqrt(Math.pow(a * (sinR - m * cosR), 2) + Math.pow(b * (cosR + m * sinR), 2));
+    const n_u = sinR - m * cosR;        // 法線在橢圓長軸方向的投影
+    const n_v = cosR + m * sinR;        // 法線在橢圓短軸方向的投影
 
-    return { x: Cx, y: Cy - h };
+    // 6. 計算橢圓中心到切線的垂直距離 h (即該方向的支撐半徑)
+    const h = Math.sqrt(a * a * n_u * n_u + b * b * n_v * n_v);
+
+    // 7. 計算橢圓「頂部」切點相對於中心的世界坐標位移
+    // 根據橢圓性質，法線為 (n_u, n_v) 的點坐標與 (a^2*n_u, b^2*n_v) 成正比
+    const dx_rel_top = (a * a * n_u * cosR - b * b * n_v * sinR) / h;
+    const dy_rel_top = (a * a * n_u * sinR + b * b * n_v * cosR) / h;
+
+    // 8. 鏡像轉換以獲得「底部」實際地面接觸點
+    // 由於我們需要的是地面接觸點而非頂部切點，需取鏡像反向向量
+    const dx_cp = -dx_rel_top;
+    const dy_cp = -dy_rel_top;
+
+    // 回傳包含水平與垂直校正後的最終接觸點位置
+    return { x: Cx + dx_cp, y: Cy + dy_cp };
 }
 
 function getLegPositions(angle, groundM = 0) {
@@ -777,8 +799,8 @@ const setupSlider = (id, valId, callback) => {
 
 setupSlider('lLegSlider', 'lLegVal', (v) => {
     L_leg = v;
-    // 同步 L_foot 以強制維持 SVG 視覺幾何的正確比例 (尖端與支點的比例 = 36:45)
-    L_foot = L_leg * (36 / 45);
+    // 同步 L_foot 以強制維持 SVG 視覺幾何的正確比例 (尖端與支點的比例 = 41.54:45)
+    L_foot = L_leg * (41.54 / 45);
     document.getElementById('lFootSlider').value = L_foot / globalScale;
     document.getElementById('lFootVal').innerText = (L_foot / globalScale).toFixed(1) + " (Fixed)";
 });

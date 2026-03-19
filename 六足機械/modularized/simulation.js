@@ -64,6 +64,7 @@ let accumulatedTheta = 0;
 
 // Physics State
 let smoothedGround = { m: 0, c: groundY_Ideal };
+let prevM = 0; // Track previous ground slope for movement projection
 let angularVel = 0;
 let isTorqueMode = false;
 let lockedPivot = null;
@@ -86,6 +87,7 @@ let footTracking = Array(6).fill(null).map(() => ({ isGrounded: false, startX: 0
 let displayDist = 0;
 let displayTime = 0;
 let displaySpeed = 0;
+let smoothedSpeed = 0; // Real-time horizontal velocity (px/s) with EMA smoothing
 
 // Viewport Settings (Moved to top to prevent ReferenceError)
 
@@ -331,7 +333,7 @@ function renderSide(data, isFar) {
 /**
  * Main Render and Physics Logic Loop
  */
-function renderFrame(currentTheta, recordPath) {
+function renderFrame(currentTheta, recordPath, dt = 0.016) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // 使用前一幀的地面斜率來預估腳尖位置，確保平滑度
@@ -432,26 +434,49 @@ function renderFrame(currentTheta, recordPath) {
         }
 
         if (prevFeet) {
+            const getWX = (p, m) => {
+                const alpha = -Math.atan(m);
+                return (p.x * Math.cos(alpha) - p.y * Math.sin(alpha));
+            };
+
             if (isTorqueMode && lockedPivotIndex !== -1) {
-                // 旋轉階段只由當前鎖定的支腳產生推進位移
-                frameDx = prevFeet[lockedPivotIndex].x - allFeet[lockedPivotIndex].x;
+                // 旋轉階段由當前鎖定的支腳產生推進位移 (考慮傾角變化帶來的水平推力)
+                const prevWX = getWX(prevFeet[lockedPivotIndex], prevM);
+                const currWX = getWX(allFeet[lockedPivotIndex], smoothedGround.m);
+                frameDx = (prevWX - currWX);
             } else {
                 let commonFeet = currentGroundedFeetIndices.filter(idx => prevGroundedFeetIndices.includes(idx));
                 if (commonFeet.length > 0) {
                     let sumDx = 0;
-                    for (let idx of commonFeet) sumDx += (prevFeet[idx].x - allFeet[idx].x);
-                    frameDx = sumDx / commonFeet.length;
+                    for (let idx of commonFeet) {
+                        const prevWX = getWX(prevFeet[idx], prevM);
+                        const currWX = getWX(allFeet[idx], smoothedGround.m);
+                        sumDx += (prevWX - currWX);
+                    }
+                    frameDx = (sumDx / commonFeet.length);
                 } else if (prevGroundedFeetIndices.length > 0) {
                     let sumDx = 0;
-                    for (let idx of prevGroundedFeetIndices) sumDx += (prevFeet[idx].x - allFeet[idx].x);
-                    frameDx = sumDx / prevGroundedFeetIndices.length;
+                    for (let idx of prevGroundedFeetIndices) {
+                        const prevWX = getWX(prevFeet[idx], prevM);
+                        const currWX = getWX(allFeet[idx], smoothedGround.m);
+                        sumDx += (prevWX - currWX);
+                    }
+                    frameDx = (sumDx / prevGroundedFeetIndices.length);
                 }
             }
         }
 
+        prevM = smoothedGround.m;
+
         prevGroundedFeetIndices = currentGroundedFeetIndices;
         currentWorldX += frameDx;
         prevFeet = allFeet.map(f => ({ x: f.x, y: f.y }));
+
+        // 4.1 Real-time Speed Tracking (EMA smoothing for UI stability)
+        if (dt > 0) {
+            let instantaneousSpeed = frameDx / dt; // pixels per second
+            smoothedSpeed = 0.85 * smoothedSpeed + 0.15 * instantaneousSpeed;
+        }
 
         // 4.5. Mechanical Inertia Reaction (慣性反作用力模擬)
         // Use gravityScale as a mass/force multiplier
@@ -638,27 +663,17 @@ function drawOverlayStats() {
     ctx.fillStyle = '#94a3b8';
     ctx.fillText('前次腳步推進: ', canvas.width - 220, 70);
     ctx.fillStyle = '#38bdf8';
-    ctx.fillText(`${displayDist.toFixed(1)} px`, canvas.width - 110, 70);
+    ctx.fillText(`${displayDist.toFixed(1)} mm`, canvas.width - 110, 70);
 
     ctx.fillStyle = '#94a3b8';
     ctx.fillText('前次腳步均速: ', canvas.width - 220, 95);
     ctx.fillStyle = '#34d399';
-    ctx.fillText(`${displaySpeed.toFixed(1)} px/s`, canvas.width - 110, 95);
+    ctx.fillText(`${displaySpeed.toFixed(1)} mm/s`, canvas.width - 110, 95);
 
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText('當前觸地進度: ', canvas.width - 220, 120);
+    ctx.fillText('當前移動速度: ', canvas.width - 220, 120);
     ctx.fillStyle = '#facc15';
-
-    // Find the progress of the foot that has been grounded the longest currently
-    let currentActiveDist = 0;
-    let earliestStart = Infinity;
-    for (let i = 0; i < 6; i++) {
-        if (footTracking[i].isGrounded && footTracking[i].startTime < earliestStart) {
-            earliestStart = footTracking[i].startTime;
-            currentActiveDist = Math.abs(currentWorldX - footTracking[i].startX);
-        }
-    }
-    ctx.fillText(`${currentActiveDist.toFixed(1)} px`, canvas.width - 110, 120);
+    ctx.fillText(`${smoothedSpeed.toFixed(1)} mm/s`, canvas.width - 110, 120);
 }
 
 function animate() {
@@ -695,13 +710,15 @@ function animate() {
         document.getElementById('angleVal').innerText = deg + '°';
     }
 
-    renderFrame(theta, isPlaying);
+    renderFrame(theta, isPlaying, dt);
 
-    if (isPlaying || isTorqueMode || Math.abs(angularVel) > 0.001) {
+    if (isPlaying || isTorqueMode || Math.abs(angularVel) > 0.001 || smoothedSpeed > 0.1) {
         isLooping = true;
         requestAnimationFrame(animate);
     } else {
         isLooping = false;
+        smoothedSpeed = 0; // Snap to zero when very low
+        renderFrame(theta, false, 0); // Final render to update UI to 0
     }
 }
 

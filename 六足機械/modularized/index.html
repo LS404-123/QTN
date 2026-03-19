@@ -10,7 +10,7 @@
 
 <body>
 
-    <h2>運動學模擬器：六足姿態控制與數據統計</h2>
+    <h2>進階機械人姿態模擬器</h2>
     <canvas id="simCanvas" width="900" height="500"></canvas>
 
     <div class="control-panel">
@@ -25,6 +25,7 @@
                 <label class="checkbox-label">
                     <input type="checkbox" id="showPathsCheck"> <span>顯示軌跡</span>
                 </label>
+                <button id="povBtn" class="btn-secondary admin-only">視角：以世界為中心</button>
             </div>
         </div>
 
@@ -38,27 +39,20 @@
                     <span class="val-display" id="speedVal">Low in battery</span>
                 </div>
                 <div class="slider-group">
-                    <label>視角模式</label>
-                    <select id="povSelect">
-                        <option value="robot">以機器人為中心</option>
-                        <option value="world" selected>以世界為中心</option>
-                    </select>
+                    <label>相位差</label>
+                    <input type="range" id="phaseSlider" min="0" max="180" step="1" value="0">
+                    <span class="val-display" id="phaseVal">0°</span>
                 </div>
                 <div class="slider-group">
                     <label>手動角度</label>
                     <input type="range" id="angleSlider" min="0" max="360" step="1" value="0">
                     <span class="val-display" id="angleVal">0°</span>
                 </div>
-                <div class="slider-group">
-                    <label>相位差</label>
-                    <input type="range" id="phaseSlider" min="0" max="180" step="1" value="0">
-                    <span class="val-display" id="phaseVal">0°</span>
-                </div>
             </div>
         </div>
 
         <!-- Section 3: 機械幾何與構造 -->
-        <div class="control-section">
+        <div class="control-section" id="adminSection">
             <div class="section-title">機械幾何構造設計</div>
             <div class="control-row">
                 <div class="slider-group">

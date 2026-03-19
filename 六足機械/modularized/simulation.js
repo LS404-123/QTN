@@ -1,8 +1,31 @@
 /**
  * Hexapod Simulator - Kinematics and Physics Logic
  */
+// --- Speed Visualization Configuration ---
+const speedVizConfig = {
+    particleCount: 60,
+    particleBaseOpacity: 0.5,
+    particleSpeedMult: 1.5,      // 1.5 to have a good speed visualization
+    particleLengthScale: 0.15,
+    echoCount: 3,                // Tiny amount of ghosts for blur feel
+    echoOffsetMult: 0.025,        // Very small offset for "tiny degree"
+    echoBaseAlpha: 0.35
+};
+
 const canvas = document.getElementById('simCanvas');
 const ctx = canvas.getContext('2d');
+
+// Off-screen canvas for group transparency (Far side layering)
+const offscreenCanvas = document.createElement('canvas');
+const offCtx = offscreenCanvas.getContext('2d');
+offscreenCanvas.width = canvas.width;
+offscreenCanvas.height = canvas.height;
+
+// Off-screen canvas for Full Robot capture (Used for Motion Blur)
+const robotCanvas = document.createElement('canvas');
+const robotCtx = robotCanvas.getContext('2d');
+robotCanvas.width = canvas.width;
+robotCanvas.height = canvas.height;
 
 // Fixed Machine Geometry Constants
 // Machine Geometry Parameters
@@ -25,6 +48,12 @@ let L_leg = 25.0 * globalScale;
 let L_blue = 55.0 * globalScale;
 let L_foot = 25.0 * (41.54 / 45) * globalScale; // 鎖定與 SVG 的幾何比例 (腳尖:支點) = 41.54:45
 let gearboxShiftX = 0;
+
+// Gearbox Colors (Reference from 齒輪箱.html)
+const gearboxFill = '#8a8d91';
+const gearboxStroke = '#fdfbf7';
+const gearboxAnnulusFill = '#808082';
+const gearboxHoleFill = '#000000';
 
 // Viewport Settings
 const scale = 3.5;
@@ -54,6 +83,8 @@ let showPaths = false;
 let simSpeed = -0.1;
 let gravityScale = 1.0;
 let povMode = 'world';
+let isAdminMode = false; // Hidden Admin Authority
+let overlayAlpha = 0;   // For smooth fade in/out
 
 let paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
 const maxPathLen = 150;
@@ -88,6 +119,56 @@ let displayDist = 0;
 let displayTime = 0;
 let displaySpeed = 0;
 let smoothedSpeed = 0; // Real-time horizontal velocity (px/s) with EMA smoothing
+let cycleAvgSpeed = 0;  // Average speed over the last full crank cycle
+let lastCycleX = 0;
+let lastCycleTime = 0;
+let prevTheta = 0;
+
+// --- Speed Visualization State ---
+class SpeedParticle {
+    constructor() {
+        this.vx = 0; // Current internal velocity for inertia/decay
+        this.reset();
+    }
+    reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * (canvas.height - 50); // across full height
+        this.len = 15 + Math.random() * 40;
+        this.speedMult = (0.8 + Math.random() * 0.4) * speedVizConfig.particleSpeedMult;
+        this.opacity = (Math.random() * 0.4 + 0.2) * speedVizConfig.particleBaseOpacity;
+        // Don't reset vx, keep momentum during screen wrap
+    }
+    update(dt, speed) {
+        // Target velocity based on robot movement
+        const targetVx = speed * scale * this.speedMult;
+
+        // --- Decay / Smoothing Term (Inertia) ---
+        // Every frame, current velocity drifts 10% towards target velocity
+        const smoothing = 0.05;
+        this.vx = this.vx * (1 - smoothing) + targetVx * smoothing;
+
+        this.x -= this.vx * dt;
+
+        if (this.x < -100) {
+            this.x = canvas.width + 100;
+            this.y = Math.random() * (canvas.height - 50);
+        } else if (this.x > canvas.width + 100) {
+            this.x = -100;
+            this.y = Math.random() * (canvas.height - 50);
+        }
+    }
+    draw(ctx, speed) {
+        const dynamicLen = this.len + Math.abs(speed * scale) * speedVizConfig.particleLengthScale;
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y);
+        // Draw tail based on direction
+        ctx.lineTo(this.x + (speed >= 0 ? dynamicLen : -dynamicLen), this.y);
+        ctx.strokeStyle = `rgba(148, 163, 184, ${this.opacity})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+}
+let speedParticles = Array.from({ length: speedVizConfig.particleCount }, () => new SpeedParticle());
 
 // Viewport Settings (Moved to top to prevent ReferenceError)
 
@@ -214,7 +295,7 @@ function getLegPositions(angle, groundM = 0) {
 
 // --- Drawing Core ---
 
-function drawSVGLink(p1, p2, svgPath, h1x, h1y, h2x, h2y, strokeColor, fillColor, isFar) {
+function drawSVGLink(p1, p2, svgPath, h1x, h1y, h2x, h2y, strokeColor, fillColor, isFar, targetCtx = ctx) {
     if (!p1 || !p2) return;
     const m1 = mapCoords(p1), m2 = mapCoords(p2);
     const dx = m2.x - m1.x, dy = m2.y - m1.y;
@@ -224,33 +305,33 @@ function drawSVGLink(p1, p2, svgPath, h1x, h1y, h2x, h2y, strokeColor, fillColor
     const angle = Math.atan2(dy, dx);
     const svgAngle = Math.atan2(h2y - h1y, h2x - h1x);
 
-    ctx.save();
-    ctx.translate(m1.x, m1.y);
-    ctx.rotate(angle - svgAngle);
-    ctx.scale(scale, scale);
-    ctx.translate(-h1x, -h1y);
+    targetCtx.save();
+    targetCtx.translate(m1.x, m1.y);
+    targetCtx.rotate(angle - svgAngle);
+    targetCtx.scale(scale, scale);
+    targetCtx.translate(-h1x, -h1y);
 
-    ctx.globalAlpha = isFar ? 0.35 : 1.0;
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 1.5 / scale;
+    targetCtx.globalAlpha = 1.0; // Layering handled by opaque drawing in group
+    targetCtx.strokeStyle = strokeColor;
+    targetCtx.lineWidth = 1.5 / scale;
     if (fillColor) {
-        ctx.fillStyle = fillColor;
-        ctx.fill(svgPath);
+        targetCtx.fillStyle = fillColor;
+        targetCtx.fill(svgPath);
     }
-    ctx.stroke(svgPath);
-    ctx.restore();
+    targetCtx.stroke(svgPath);
+    targetCtx.restore();
 }
 
-function drawLine(p1, p2, color, width) {
+function drawLine(p1, p2, color, width, targetCtx = ctx) {
     if (!p1 || !p2) return;
     const m1 = mapCoords(p1), m2 = mapCoords(p2);
-    ctx.beginPath();
-    ctx.moveTo(m1.x, m1.y);
-    ctx.lineTo(m2.x, m2.y);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = width;
-    ctx.lineCap = 'round';
-    ctx.stroke();
+    targetCtx.beginPath();
+    targetCtx.moveTo(m1.x, m1.y);
+    targetCtx.lineTo(m2.x, m2.y);
+    targetCtx.strokeStyle = color;
+    targetCtx.lineWidth = width;
+    targetCtx.lineCap = 'round';
+    targetCtx.stroke();
 }
 
 function drawPath(pathArray, color, dash) {
@@ -269,65 +350,70 @@ function drawPath(pathArray, color, dash) {
     ctx.setLineDash([]);
 }
 
-function drawPoint(p, color, radius) {
+function drawPoint(p, color, radius, targetCtx = ctx) {
     const mp = mapCoords(p);
-    ctx.beginPath();
-    ctx.arc(mp.x, mp.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
+    targetCtx.beginPath();
+    targetCtx.arc(mp.x, mp.y, radius, 0, Math.PI * 2);
+    targetCtx.fillStyle = color;
+    targetCtx.fill();
 }
 
-function renderSide(data, isFar) {
-    const alpha = isFar ? 0.25 : 1.0;
-    const jointColor = `rgba(30, 41, 59, ${alpha})`;
+function renderSide(data, isFar, targetCtx = ctx) {
+    const jointColor = isFar ? '#334155' : '#1e293b'; // Slightly different for Far
     const widthScale = isFar ? 0.8 : 1.0;
 
     // Define drawing parts
     const drawCrank = () => {
-        const crankFill = '#e2e8f0';
-        const crankStroke = '#94a3b8';
+        const crankFill = isFar ? '#f1f5f9' : '#e2e8f0';
+        const crankStroke = isFar ? '#cbd5e1' : '#94a3b8';
         if (typeof crankSVGPath !== 'undefined') {
-            drawSVGLink(C_crank, data.ML, crankSVGPath, 8.7, 8.7, 8.7, currentCrankHoleY, crankStroke, crankFill, isFar);
+            drawSVGLink(C_crank, data.ML, crankSVGPath, 8.7, 8.7, 8.7, currentCrankHoleY, crankStroke, crankFill, isFar, targetCtx);
         } else {
-            const crankColor = `rgba(203, 213, 225, ${alpha})`;
-            drawLine(C_crank, data.ML, crankColor, 4 * widthScale);
+            const crankColor = isFar ? '#e2e8f0' : '#cbd5e1';
+            drawLine(C_crank, data.ML, crankColor, 4 * widthScale, targetCtx);
         }
     };
 
-    const drawRods = () => {
-        const rodFill = '#3b82f6';
-        const rodStroke = '#1d4ed8';
-        drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar);
-        drawSVGLink(Pf, data.MT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar);
-        drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar);
+    const drawRods = (isFar) => {
+        const rodFill = isFar ? '#93c5fd' : '#3b82f6';
+        const rodStroke = isFar ? '#60a5fa' : '#1d4ed8';
+        if (isFar) {
+            drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
+            drawSVGLink(Pf, data.MT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
+            drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
+        } else {
+            drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
+            drawSVGLink(Pf, data.MT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
+            drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
+        }
     };
 
     const drawLegs = () => {
-        const legFill = '#facc15';
-        const legStroke = '#b45309';
-        drawSVGLink(data.FT, Pf, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar);
-        drawSVGLink(data.MT, data.ML, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar);
-        drawSVGLink(data.RT, Pr, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar);
+        const legFill = isFar ? '#fef08a' : '#facc15';
+        const legStroke = isFar ? '#fde047' : '#b45309';
+        drawSVGLink(data.FT, Pf, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar, targetCtx);
+        drawSVGLink(data.MT, data.ML, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar, targetCtx);
+        drawSVGLink(data.RT, Pr, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar, targetCtx);
     };
 
     // Execute drawing based on final depth requirements
     if (isFar) {
         // Far Side: Rod (Bottom) → Leg (Middle) → Crank (Top)
-        drawRods();
+        drawRods(isFar);
         drawLegs();
         drawCrank();
     } else {
         // Near Side: Crank (Bottom) → Leg (Middle) → Rod (Top)
         drawCrank();
         drawLegs();
-        drawRods();
+        drawRods(isFar);
     }
 
     // Joints always on top
-    drawPoint(data.ML, jointColor, 4 * widthScale);
-    drawPoint(data.FT, jointColor, 4 * widthScale);
-    drawPoint(data.MT, jointColor, 4 * widthScale);
-    drawPoint(data.RT, jointColor, 4 * widthScale);
+    drawPoint(data.ML, jointColor, 4 * widthScale, targetCtx);
+    drawPoint(data.FT, jointColor, 4 * widthScale, targetCtx);
+    drawPoint(data.MT, jointColor, 4 * widthScale, targetCtx);
+    drawPoint(data.RT, jointColor, 4 * widthScale, targetCtx);
 }
 
 /**
@@ -335,6 +421,12 @@ function renderSide(data, isFar) {
  */
 function renderFrame(currentTheta, recordPath, dt = 0.016) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 0. Draw Speed Particles (Bottom Layer) - Driven by stable cycle average
+    speedParticles.forEach(p => p.draw(ctx, cycleAvgSpeed));
+
+    // Clear off-screen buffer
+    offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
     // 使用前一幀的地面斜率來預估腳尖位置，確保平滑度
     const near = getLegPositions(currentTheta, smoothedGround.m);
@@ -472,10 +564,20 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         currentWorldX += frameDx;
         prevFeet = allFeet.map(f => ({ x: f.x, y: f.y }));
 
-        // 4.1 Real-time Speed Tracking (EMA smoothing for UI stability)
+        // 4.1 Real-time Speed Tracking (Aggressive EMA + Friction Filter)
         if (dt > 0) {
             let instantaneousSpeed = frameDx / dt; // pixels per second
-            smoothedSpeed = 0.85 * smoothedSpeed + 0.15 * instantaneousSpeed;
+
+            // --- Friction/Jitter Threshold ---
+            // If movement opposes the direction of rotation (simSpeed) and is weak, treat as jitter
+            const isOpposite = (simSpeed > 0 && instantaneousSpeed < 0) || (simSpeed < 0 && instantaneousSpeed > 0);
+            if (isOpposite && Math.abs(instantaneousSpeed) < 10) {
+                instantaneousSpeed = 0;
+            }
+
+            // Use alpha 0.05 (instead of 0.15) for much higher stability
+            smoothedSpeed = 0.95 * smoothedSpeed + 0.05 * instantaneousSpeed;
+            if (Math.abs(smoothedSpeed) < 0.5) smoothedSpeed = 0;
         }
 
         // 4.5. Mechanical Inertia Reaction (慣性反作用力模擬)
@@ -554,81 +656,110 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         drawPath(paths.near.m, 'rgba(34, 197, 94, 0.7)', [5, 5]);
         drawPath(paths.near.r, 'rgba(59, 130, 246, 0.7)', [5, 5]);
 
-        renderSide(far, true);
+        // --- Render Far Side (Grouped Transparency) ---
+        // 1. Draw to off-screen buffer with OPAQUE but FADED colors
+        renderSide(far, true, offCtx);
 
-        // --- Structural Connections & Body ---
+        // --- 7. Robot Rendering (Buffered for Motion Blur) ---
+        // 7.1 Clear robot buffer
+        robotCtx.clearRect(0, 0, robotCanvas.width, robotCanvas.height);
+
+        // 7.2 Draw Far Side to robot buffer
+        offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        renderSide(far, true, offCtx);
+        robotCtx.save();
+        robotCtx.globalAlpha = 0.25;
+        robotCtx.drawImage(offscreenCanvas, 0, 0);
+        robotCtx.restore();
+
+        // 7.3 Draw Structural Connections & Body to robot buffer
         const bodyY = -bodyYOffset;
         const connection_width = 12;
-        drawLine(Pf, { x: Pf.x, y: bodyY }, '#64748b', connection_width);
-        drawLine(Pr, { x: Pr.x, y: bodyY }, '#64748b', connection_width);
+        drawLine(Pf, { x: Pf.x, y: bodyY }, '#64748b', connection_width, robotCtx);
+        drawLine(Pr, { x: Pr.x, y: bodyY }, '#64748b', connection_width, robotCtx);
 
-        // 移除原有的中央垂直支架，改為渲染齒輪箱
-        // drawLine(C_crank, { x: C_crank.x, y: bodyY }, '#64748b', connection_width); // Connection to crank center
-
-        // --- 繪製齒輪箱 (Gearbox) ---
-        // 對齊於底部中點 (x = 18.5) 加上使用者的齒輪箱位移
+        // 7.4 Draw Gearbox to robot buffer
         const bodyCenterPos = mapCoords({ x: gearboxShiftX, y: bodyY });
         const bp1 = mapCoords({ x: -S, y: bodyY });
         const bp2 = mapCoords({ x: S, y: bodyY });
         const bodyAngle = Math.atan2(bp2.y - bp1.y, bp2.x - bp1.x);
 
-        ctx.save();
-        ctx.translate(bodyCenterPos.x, bodyCenterPos.y);
-        ctx.rotate(bodyAngle);
-
-        const bodyDistancePx = bodyYOffset * scale;
-        const barThicknessPx = 12; // 對應下方 drawLine 的 linewidth
-        const targetDistPx = bodyDistancePx - (barThicknessPx / 2.0);
-
-        const svgBottomDist = 25.0 - 12.5;
-        const customGearboxScale = targetDistPx / svgBottomDist;
-
-        ctx.scale(customGearboxScale, customGearboxScale);
-
-        // 以底部小方塊 (x=18.5, y=27) 為中心對齊車體
-        ctx.translate(-18.5, -27);
-
-        // User 需求: Filled the gearbox with grey color and use creamy white as boarder line color
-        ctx.fillStyle = '#8a8d91';         // 灰色 (Grey color)
-        ctx.strokeStyle = '#fdfbf7';       // 米白色 / 奶油白 (Creamy white)
-        ctx.lineWidth = 1.5 / customGearboxScale; // 維持框線的視覺粗細不被縮放影響
-
-        // 執行繪製 (路徑由 svgs.js 動態加載而來)
+        robotCtx.save();
+        robotCtx.translate(bodyCenterPos.x, bodyCenterPos.y);
+        robotCtx.rotate(bodyAngle);
+        const customGearboxScale = (bodyYOffset * scale - 6) / 12.5;
+        robotCtx.scale(customGearboxScale, customGearboxScale);
+        robotCtx.translate(-18.5, -27);
+        robotCtx.fillStyle = gearboxFill;
+        robotCtx.strokeStyle = gearboxStroke;
+        robotCtx.lineWidth = 1.5 / customGearboxScale;
         if (typeof gearboxSVGPath !== 'undefined') {
-            ctx.fill(gearboxSVGPath);
-            ctx.stroke(gearboxSVGPath);
+            robotCtx.fill(gearboxSVGPath);
+            robotCtx.stroke(gearboxSVGPath);
         }
-        ctx.restore();
+        const drawHoleDetail = (cx, cy) => {
+            robotCtx.beginPath(); robotCtx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+            robotCtx.fillStyle = gearboxAnnulusFill; robotCtx.fill(); robotCtx.stroke();
+            robotCtx.beginPath(); robotCtx.arc(cx, cy, 1.5, 0, Math.PI * 2);
+            robotCtx.fillStyle = gearboxHoleFill; robotCtx.fill(); robotCtx.stroke();
+        };
+        drawHoleDetail(11.5, 12.5);
+        drawHoleDetail(25.0, 12.5);
+        robotCtx.restore();
 
-        // 畫這條橫槓車體（覆蓋在齒輪箱上面看起來更有結構感）
-        drawLine({ x: -S - 15, y: bodyY }, { x: S + 15, y: bodyY }, '#94a3b8', 12);
+        // 7.5 Draw Body Main Beam & Pivot Points to robot buffer
+        drawLine({ x: -S - 15, y: bodyY }, { x: S + 15, y: bodyY }, '#94a3b8', 12, robotCtx);
+        drawPoint(Pf, '#0f172a', 6, robotCtx);
+        drawPoint(Pr, '#0f172a', 6, robotCtx);
+        drawPoint(C_crank, '#ef4444', 7, robotCtx);
 
-        drawPoint(Pf, '#0f172a', 6);
-        drawPoint(Pr, '#0f172a', 6);
-        drawPoint(C_crank, '#ef4444', 7);
+        // 7.6 Draw Near Side to robot buffer
+        renderSide(near, false, robotCtx);
 
-        renderSide(near, false);
+        // 7.7 Now render the robotCanvas to the main ctx with Motion Blur
+        const { echoCount, echoOffsetMult, echoBaseAlpha } = speedVizConfig;
+
+        // Draw the Echoes (Ghosts) - Driven by stable cycle average
+        const vizSpeed = cycleAvgSpeed;
+        if (Math.abs(vizSpeed) > 1) {
+            for (let i = echoCount; i >= 1; i--) {
+                const offsetX = -vizSpeed * echoOffsetMult * i * scale;
+                const alpha = (echoBaseAlpha / i) * Math.min(1.0, Math.abs(vizSpeed) / 30);
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.drawImage(robotCanvas, offsetX, 0);
+                ctx.restore();
+            }
+        }
+
+        // Final main robot on top
+        ctx.drawImage(robotCanvas, 0, 0);
 
         // --- HIGHLIGHT GROUND PIVOT POINTS ---
-        if (isTorqueMode && lockedPivot) {
-            drawPoint(lockedPivot, '#ef4444', 6);
-            const mp = mapCoords(lockedPivot);
-            ctx.beginPath();
-            ctx.arc(mp.x, mp.y, 14, 0, Math.PI * 2);
-            ctx.strokeStyle = '#ef4444';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-        } else if (prevGroundedFeetIndices && prevGroundedFeetIndices.length > 0) {
-            for (let idx of prevGroundedFeetIndices) {
-                let f = allFeet[idx];
-                drawPoint(f, '#ef4444', 5);
-                const mp = mapCoords(f);
+        if (overlayAlpha > 0.01) {
+            ctx.save();
+            ctx.globalAlpha = overlayAlpha;
+            if (isTorqueMode && lockedPivot) {
+                drawPoint(lockedPivot, '#ef4444', 6);
+                const mp = mapCoords(lockedPivot);
                 ctx.beginPath();
-                ctx.arc(mp.x, mp.y, 10, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
-                ctx.lineWidth = 2;
+                ctx.arc(mp.x, mp.y, 14, 0, Math.PI * 2);
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 3;
                 ctx.stroke();
+            } else if (prevGroundedFeetIndices && prevGroundedFeetIndices.length > 0) {
+                for (let idx of prevGroundedFeetIndices) {
+                    let f = allFeet[idx];
+                    drawPoint(f, '#ef4444', 5);
+                    const mp = mapCoords(f);
+                    ctx.beginPath();
+                    ctx.arc(mp.x, mp.y, 10, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
             }
+            ctx.restore();
         }
 
     } else {
@@ -642,8 +773,13 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         footTracking.forEach(track => track.isGrounded = false);
     }
 
-    // 8. Render Movement Statistics Overlay (右上角數值面板)
-    drawOverlayStats();
+    // 8. Render Movement Statistics Overlay (右上角數值面板) - Only in Admin Mode (with Fade)
+    if (overlayAlpha > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = overlayAlpha;
+        drawOverlayStats();
+        ctx.restore();
+    }
 }
 
 function drawOverlayStats() {
@@ -685,6 +821,23 @@ function animate() {
         theta += simSpeed;
         globalSimTime += dt;
 
+        // Track cycle completion for averaging (when theta crosses 0)
+        // Check for wrapping in both directions
+        const crossedZero = (prevTheta > theta && simSpeed > 0) || (prevTheta < theta && simSpeed < 0);
+        if (crossedZero) {
+            const dx = Math.abs(currentWorldX - lastCycleX);
+            const dt_cycle = globalSimTime - lastCycleTime;
+            if (dt_cycle > 0.05) { // Minimum 0.05s to avoid tiny slivers
+                const newAvg = dx / dt_cycle;
+                // Blend cycle average for smoothness, but faster responsive if it was 0
+                const alpha = cycleAvgSpeed === 0 ? 1.0 : 0.3;
+                cycleAvgSpeed = (1 - alpha) * cycleAvgSpeed + alpha * newAvg;
+            }
+            lastCycleX = currentWorldX;
+            lastCycleTime = globalSimTime;
+        }
+        prevTheta = theta;
+
         if (playOnePeriod) {
             accumulatedTheta += Math.abs(simSpeed);
             if (accumulatedTheta >= Math.PI * 2) {
@@ -712,7 +865,7 @@ function animate() {
 
     renderFrame(theta, isPlaying, dt);
 
-    if (isPlaying || isTorqueMode || Math.abs(angularVel) > 0.001 || smoothedSpeed > 0.1) {
+    if (isPlaying || isTorqueMode || Math.abs(angularVel) > 0.001 || smoothedSpeed > 0.1 || (isAdminMode && overlayAlpha < 1) || (!isAdminMode && overlayAlpha > 0)) {
         isLooping = true;
         requestAnimationFrame(animate);
     } else {
@@ -720,6 +873,14 @@ function animate() {
         smoothedSpeed = 0; // Snap to zero when very low
         renderFrame(theta, false, 0); // Final render to update UI to 0
     }
+
+    // Update overlay Alpha for smooth fade
+    const fadeSpeed = 0.05;
+    if (isAdminMode) overlayAlpha = Math.min(1, overlayAlpha + fadeSpeed);
+    else overlayAlpha = Math.max(0, overlayAlpha - fadeSpeed);
+
+    // Update particles regardless of isPlaying (to handle residual speed)
+    speedParticles.forEach(p => p.update(dt, smoothedSpeed));
 }
 
 function triggerUpdate() {
@@ -775,6 +936,28 @@ document.getElementById('speedSlider').addEventListener('input', (e) => {
     gravityScale = 1.0 + (speedMagnitude * 5);
 });
 
+// --- Hidden Admin Trigger (Triple-click on Battery label) ---
+let clickCount = 0;
+let lastClickTime = 0;
+document.getElementById('speedVal').addEventListener('click', () => {
+    const now = Date.now();
+    if (now - lastClickTime < 600) {
+        clickCount++;
+    } else {
+        clickCount = 1;
+    }
+    lastClickTime = now;
+
+    if (clickCount >= 3) {
+        isAdminMode = !isAdminMode;
+        const panel = document.querySelector('.control-panel');
+        panel.classList.toggle('admin-mode', isAdminMode);
+        console.log("Admin Authority: " + (isAdminMode ? "Enabled" : "Disabled"));
+        clickCount = 0; // Reset
+        triggerUpdate(); // Refresh to show/hide overlay
+    }
+});
+
 document.getElementById('angleSlider').addEventListener('input', (e) => {
     let deg = parseInt(e.target.value);
 
@@ -798,8 +981,10 @@ document.getElementById('phaseSlider').addEventListener('input', (e) => {
     triggerUpdate();
 });
 
-document.getElementById('povSelect').addEventListener('change', (e) => {
-    povMode = e.target.value;
+document.getElementById('povBtn').addEventListener('click', (e) => {
+    povMode = povMode === 'world' ? 'robot' : 'world';
+    const text = povMode === 'world' ? "視角：以世界為中心" : "視角：以機器人為中心";
+    e.target.innerText = text;
     paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
     triggerUpdate();
 });

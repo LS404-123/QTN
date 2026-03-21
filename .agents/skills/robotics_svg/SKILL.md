@@ -1,9 +1,9 @@
----
-name: 機械人 SVG 生成器
-description: 用於為機械人模擬生成和優化 SVG 組件的技能，確保正確的比例、關節和分層。
+photo---
+name: SVG 生成器
+description: 用於生成 SVG 組件的技能，確保比例、關節和分層正確。
 ---
 
-# 機械人 SVG 生成器
+# SVG 生成器
 
 此技能為 `robot_simulation-` 專案提供創建 SVG 資產的專門指令。
 

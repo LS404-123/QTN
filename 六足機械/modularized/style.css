@@ -26,7 +26,7 @@
         }
 
         #simCanvas {
-            background-color: #0f172a;
+            background: linear-gradient(to bottom, #63a4ff 0%, #83eaf1 100%);
             border-radius: 16px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
             margin-bottom: 24px;
@@ -43,6 +43,7 @@
             flex-direction: column;
             gap: 16px;
             width: 100%;
+            max-width: 940px;
             box-sizing: border-box;
         }
 

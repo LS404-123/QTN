@@ -384,7 +384,7 @@
             if (!p1 || !p2) return;
             const m1 = mapCoords(p1), m2 = mapCoords(p2);
             const dx = m2.x - m1.x, dy = m2.y - m1.y;
-            const dist = Math.sqrt(dx*dx + dy*dy);
+            const dist = Math.sqrt(dx * dx + dy * dy);
             const svgDist = Math.sqrt(Math.pow(h2x - h1x, 2) + Math.pow(h2y - h1y, 2));
             const scale = dist / svgDist;
             const angle = Math.atan2(dy, dx);
@@ -452,7 +452,7 @@
             const widthScale = isFar ? 0.8 : 1.0;
 
             drawLine(C_crank, data.ML, crankColor, 4 * widthScale);
-            
+
             // 直杆 (Holes at cy=10, 102. Spacing = 92)
             const rodFill = '#3b82f6';
             drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, '#1d4ed8', rodFill, isFar);
@@ -887,7 +887,7 @@
         });
         setupSlider('lBlueSlider', 'lBlueVal', (v) => L_blue = v);
         // L_footSlider 不再負責手動調整，已被鎖死
-        setupSlider('lFootSlider', 'lFootVal', (v) => {}); 
+        setupSlider('lFootSlider', 'lFootVal', (v) => { });
         setupSlider('rSlider', 'rVal', (v) => R = v);
 
         // Init

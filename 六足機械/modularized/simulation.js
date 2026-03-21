@@ -163,11 +163,108 @@ class SpeedParticle {
         ctx.moveTo(this.x, this.y);
         // Draw tail based on direction
         ctx.lineTo(this.x + (speed >= 0 ? dynamicLen : -dynamicLen), this.y);
-        ctx.strokeStyle = `rgba(148, 163, 184, ${this.opacity})`;
+        ctx.strokeStyle = `rgba(30, 58, 138, ${this.opacity})`;
         ctx.lineWidth = 1.5;
         ctx.stroke();
     }
 }
+
+class Particle {
+    constructor() {
+        this.reset(true);
+    }
+    reset(initial = false) {
+        this.x = initial ? Math.random() * canvas.width : (Math.random() > 0.5 ? canvas.width + 10 : -10);
+        this.y = 480 + Math.random() * 80;
+        this.opacity = 0.1 + Math.random() * 0.3;
+        this.len = 5 + Math.random() * 15;
+    }
+    update(dt, speed) {
+        const targetVx = speed * scale;
+        this.x -= targetVx * dt;
+        if (this.x < -100 || this.x > canvas.width + 100) {
+            this.reset();
+        }
+    }
+    draw(ctx, speed) {
+        const dynamicLen = this.len * (1 + Math.abs(speed) / 50);
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y);
+        ctx.lineTo(this.x + (speed >= 0 ? dynamicLen : -dynamicLen), this.y);
+        ctx.strokeStyle = `rgba(30, 58, 138, ${this.opacity})`;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+    }
+}
+
+class Tree {
+    constructor() {
+        this.reset(true);
+    }
+    reset(initial = false) {
+        const types = ['pine', 'round', 'poplar'];
+        this.type = types[Math.floor(Math.random() * 3)];
+        this.x = initial ? Math.random() * (canvas.width + 600) - 300 : (Math.random() > 0.5 ? canvas.width + 300 : -300);
+        
+        // Depth-linked parameters (smaller = further)
+        this.scale = 0.4 + Math.random() * 0.8; // Range [0.4, 1.2]
+        // Opacity: map scale [0.4, 1.2] to opacity [0.3, 0.8]
+        this.opacity = (this.scale - 0.4) / 0.8 * 0.5 + 0.3;
+        this.y = 480; 
+    }
+    update(dt, speed) {
+        // Parallax speed: smaller trees (far away) move slower
+        // Normalized so that trees with scale 1.2 move at 100% ground speed
+        const parallaxFactor = this.scale / 1.2;
+        const targetVx = speed * scale * parallaxFactor;
+        this.x -= targetVx * dt;
+
+        if (this.x < -400) {
+            this.x = canvas.width + 400;
+            this.reset(false);
+        } else if (this.x > canvas.width + 400) {
+            this.x = -400;
+            this.reset(false);
+        }
+    }
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y - 20 * this.scale);
+        ctx.scale(this.scale, this.scale);
+        ctx.globalAlpha = this.opacity;
+        
+        const green = '#a7f3d0';
+        const brown = '#94a3b8';
+
+        if (this.type === 'pine') {
+            ctx.beginPath(); ctx.moveTo(0, -110);
+            ctx.bezierCurveTo(15, -85, 30, -75, 10, -65); ctx.bezierCurveTo(30, -55, 45, -35, 20, -30);
+            ctx.bezierCurveTo(45, -20, 60, 10, 0, 10); ctx.bezierCurveTo(-60, 10, -45, -20, -20, -30);
+            ctx.bezierCurveTo(-45, -35, -30, -55, -10, -65); ctx.bezierCurveTo(-30, -75, -15, -85, 0, -110);
+            ctx.closePath(); ctx.fillStyle = green; ctx.fill(); ctx.strokeStyle = brown; ctx.lineWidth = 3; ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, 10); ctx.lineTo(0, -70); ctx.moveTo(0, -10); ctx.lineTo(-20, -15); ctx.moveTo(0, -10); ctx.lineTo(20, -15); ctx.stroke();
+        } else if (this.type === 'round') {
+            ctx.beginPath(); ctx.moveTo(0, -100); ctx.bezierCurveTo(20, -105, 40, -80, 40, -55);
+            ctx.bezierCurveTo(55, -40, 50, -10, 25, -5); ctx.bezierCurveTo(15, 5, -15, 5, -25, -5);
+            ctx.bezierCurveTo(-50, -10, -55, -40, -40, -55); ctx.bezierCurveTo(-40, -80, -20, -105, 0, -100);
+            ctx.closePath(); ctx.fillStyle = green; ctx.fill(); ctx.strokeStyle = brown; ctx.lineWidth = 3; ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -70); ctx.moveTo(0, -20); ctx.lineTo(-20, -40); ctx.moveTo(0, -30); ctx.lineTo(25, -45); ctx.stroke();
+        } else {
+            ctx.beginPath(); ctx.moveTo(0, -105); ctx.bezierCurveTo(15, -105, 25, -90, 15, -75);
+            ctx.bezierCurveTo(30, -70, 40, -50, 25, -35); ctx.bezierCurveTo(45, -30, 45, 0, 0, 0);
+            ctx.bezierCurveTo(-45, 0, -45, -30, -25, -35); ctx.bezierCurveTo(-40, -50, -30, -70, -15, -75);
+            ctx.bezierCurveTo(-25, -90, -15, -105, 0, -100);
+            ctx.closePath(); ctx.fillStyle = green; ctx.fill(); ctx.strokeStyle = brown; ctx.lineWidth = 3; ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -75); ctx.moveTo(0, -25); ctx.lineTo(-15, -45); ctx.moveTo(0, -40); ctx.lineTo(15, -55); ctx.stroke();
+        }
+        ctx.beginPath(); ctx.moveTo(-20, 20); ctx.lineTo(20, 20); ctx.moveTo(0, 0); ctx.lineTo(0, 20); ctx.stroke();
+        ctx.restore();
+    }
+}
+
+// Global scenic objects
+const particles = Array.from({ length: 40 }, () => new Particle());
+const trees = Array.from({ length: 6 }, () => new Tree());
 let speedParticles = Array.from({ length: speedVizConfig.particleCount }, () => new SpeedParticle());
 
 // Viewport Settings (Moved to top to prevent ReferenceError)
@@ -425,6 +522,11 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
     // 0. Draw Speed Particles (Bottom Layer) - Driven by stable cycle average
     speedParticles.forEach(p => p.draw(ctx, cycleAvgSpeed));
 
+    // Draw Scenic Trees & Ground Particles
+    trees.forEach(t => t.draw(ctx));
+    particles.forEach(p => p.draw(ctx, cycleAvgSpeed));
+
+
     // Clear off-screen buffer
     offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
@@ -562,6 +664,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 
         prevGroundedFeetIndices = currentGroundedFeetIndices;
         currentWorldX += frameDx;
+
         prevFeet = allFeet.map(f => ({ x: f.x, y: f.y }));
 
         // 4.1 Real-time Speed Tracking (Aggressive EMA + Friction Filter)
@@ -631,10 +734,35 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             }
         }
 
-        // 7. Drawing Order
+        // 7. Drawing Ground (Solid Fill)
+        ctx.save();
+        if (povMode === 'robot') {
+            const gX1 = -1000, gX2 = 1000;
+            const gm1 = mapCoords({ x: gX1, y: smoothedGround.m * gX1 + smoothedGround.c });
+            const gm2 = mapCoords({ x: gX2, y: smoothedGround.m * gX2 + smoothedGround.c });
+            ctx.beginPath();
+            ctx.moveTo(gm1.x, gm1.y);
+            ctx.lineTo(gm2.x, gm2.y);
+            ctx.lineTo(canvas.width + 100, canvas.height + 100);
+            ctx.lineTo(-100, canvas.height + 100);
+            ctx.closePath();
+        } else {
+            const gy = cy - groundY_Ideal * scale;
+            ctx.beginPath();
+            ctx.rect(0, gy, canvas.width, canvas.height - gy);
+        }
+        // Gradient for a premium "Field" look
+        const groundGrad = ctx.createLinearGradient(0, 480, 0, canvas.height);
+        groundGrad.addColorStop(0, '#10b981');
+        groundGrad.addColorStop(1, '#065f46');
+        ctx.fillStyle = groundGrad;
+        ctx.fill();
+        ctx.restore();
+
+        // Ground Top Line
         ctx.beginPath();
         if (povMode === 'robot') {
-            const gX1 = -350, gX2 = 350;
+            const gX1 = -1000, gX2 = 1000;
             const gm1 = mapCoords({ x: gX1, y: smoothedGround.m * gX1 + smoothedGround.c });
             const gm2 = mapCoords({ x: gX2, y: smoothedGround.m * gX2 + smoothedGround.c });
             ctx.moveTo(gm1.x, gm1.y);
@@ -644,7 +772,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             ctx.moveTo(0, gy);
             ctx.lineTo(canvas.width, gy);
         }
-        ctx.strokeStyle = '#10b981';
+        ctx.strokeStyle = '#059669';
         ctx.lineWidth = 3;
         ctx.stroke();
 
@@ -668,7 +796,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
         renderSide(far, true, offCtx);
         robotCtx.save();
-        robotCtx.globalAlpha = 0.25;
+        robotCtx.globalAlpha = 0.75;
         robotCtx.drawImage(offscreenCanvas, 0, 0);
         robotCtx.restore();
 
@@ -814,7 +942,7 @@ function drawOverlayStats() {
 
 function animate() {
     let now = performance.now();
-    let dt = (now - lastFrameTime) / 1000; // Delta time in seconds
+    let dt = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
 
     if (isPlaying) {
@@ -881,6 +1009,8 @@ function animate() {
 
     // Update particles regardless of isPlaying (to handle residual speed)
     speedParticles.forEach(p => p.update(dt, smoothedSpeed));
+    particles.forEach(p => p.update(dt, smoothedSpeed));
+    trees.forEach(t => t.update(dt, cycleAvgSpeed));
 }
 
 function triggerUpdate() {

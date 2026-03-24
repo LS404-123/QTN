@@ -46,8 +46,32 @@ let R = crankDistances[0]; // Initial radius for Hole 1
 
 let L_leg = 25.0 * globalScale;
 let L_blue = 55.0 * globalScale;
-let L_foot = 25.0 * (41.54 / 45) * globalScale; // 鎖定與 SVG 的幾何比例 (腳尖:支點) = 41.54:45
+let L_foot = (25.0 * globalScale) * (39.17 / 45); // 與視覺設計 (Hole2 to Tip = 39.17) 完全同步
 let gearboxShiftX = 0;
+
+// SVG Path globals for dynamic scaling (legSVGPath is already declared in svgs.js)
+legSVGPath = null;
+let legSVG_h2y = 65; // Matches the default 45mm spacing in SVG units (20 + 45)
+
+function updateLegSVGPath() {
+    // 預設 L_leg 為 25*globalScale 時，SVG 孔距應為 45
+    const h = (L_leg / (25.0 * globalScale)) * 45.0;
+    legSVG_h2y = 20 + h;
+
+    // 根據腳部原始設計 (Hole 2 at 65, Tip at 104.17) 修正規劃比例
+    // 支點到腳尖距離 = 39.17。扣除 ry=13 後，中心 y 偏移量 = 26.17
+    const yOff2 = h + 26.17;
+    const yOff1 = h + 10.67;
+
+    // 組合主路徑 + 兩個安裝孔 (r=1.5)
+    const legPath = `M 21, 20 A 9,9 0 0, 1 39, 20 L 39, ${20 + yOff1} A 15.5,15.5 0 0, 0 54.5, ${20 + yOff2} A 25, 13 0 1, 1 5.39, ${20 + yOff2} A 15.5,15.5 0 0, 0 21, ${20 + yOff1} Z`;
+    const hole1 = `M 28.5, 20 a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0`;
+    const hole2 = `M 28.5, ${20 + h} a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0`;
+
+    legSVGPath = new Path2D(`${legPath} ${hole1} ${hole2}`);
+}
+// Initial generation
+updateLegSVGPath();
 
 // Gearbox Colors (Reference from 齒輪箱.html)
 const gearboxFill = '#8a8d91';
@@ -212,12 +236,12 @@ class Tree {
         const types = ['pine', 'round', 'poplar'];
         this.type = types[Math.floor(Math.random() * 3)];
         this.x = initial ? Math.random() * (canvas.width + 600) - 300 : (Math.random() > 0.5 ? canvas.width + 300 : -300);
-        
+
         // Depth-linked parameters (smaller = further)
         this.scale = 0.4 + Math.random() * 0.8; // Range [0.4, 1.2]
         // Opacity: map scale [0.4, 1.2] to opacity [0.3, 0.8]
         this.opacity = (this.scale - 0.4) / 0.8 * 0.5 + 0.3;
-        this.y = 480; 
+        this.y = 480;
     }
     update(dt, speed) {
         // Parallax speed: smaller trees (far away) move slower
@@ -239,7 +263,7 @@ class Tree {
         ctx.translate(this.x, this.y - 20 * this.scale);
         ctx.scale(this.scale, this.scale);
         ctx.globalAlpha = this.opacity;
-        
+
         const green = '#a7f3d0';
         const brown = '#94a3b8';
 
@@ -346,11 +370,11 @@ function getEllipticFootPoint(P_top, P_bottom, m = 0) {
     const phi = Math.atan2(dy, dx);
     const rot = phi - Math.PI / 2; // 計算橢圓局部坐標系與世界座標系的旋轉差
 
-    // 3. 根據 L_leg 與 SVG 原始設計 (45mm 孔距) 進行比例縮放
-    const s = L_curr / 45.0;            // 幾何縮放因子
-    const a = 25 * s;                   // 橢圓長軸半徑 (對應 SVG 的 rx=25)
-    const b = 13 * s;                   // 橢圓短軸半徑 (對應 SVG 的 ry=13)
-    const centerDist = 28.54 * s;       // 支點 P_bottom 到橢圓幾何中心的精確偏移 (根據高度 15.37mm 標定)
+    // 3. 橢圓腳部使用固定比例（基於預設腿長 25*globalScale），不隨 L_leg 變大而變肥
+    const s_fixed = (25.0 * globalScale) / 45.0;
+    const a = 25 * s_fixed;                   // 橢圓長軸半徑 (固定)
+    const b = 13 * s_fixed;                   // 橢圓短軸半徑 (固定)
+    const centerDist = 28.54 * s_fixed;       // 支點到橢圓中心的偏移 (固定)
 
     // 4. 在世界坐標系中定位橢圓中心的坐標 (Cx, Cy)
     const Cx = P_bottom.x + (dx / L_curr) * centerDist;
@@ -495,9 +519,9 @@ function renderSide(data, isFar, targetCtx = ctx) {
     const drawLegs = () => {
         const legFill = isFar ? '#fef08a' : '#facc15';
         const legStroke = isFar ? '#fde047' : '#b45309';
-        drawSVGLink(data.FT, Pf, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar, targetCtx);
-        drawSVGLink(data.MT, data.ML, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar, targetCtx);
-        drawSVGLink(data.RT, Pr, legSVGPath, 30, 20, 30, 65, legStroke, legFill, isFar, targetCtx);
+        drawSVGLink(data.FT, Pf, legSVGPath, 30, 20, 30, legSVG_h2y, legStroke, legFill, isFar, targetCtx);
+        drawSVGLink(data.MT, data.ML, legSVGPath, 30, 20, 30, legSVG_h2y, legStroke, legFill, isFar, targetCtx);
+        drawSVGLink(data.RT, Pr, legSVGPath, 30, 20, 30, legSVG_h2y, legStroke, legFill, isFar, targetCtx);
     };
 
     // Execute drawing based on final depth requirements
@@ -831,7 +855,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         // Since gearbox is translated by (-18.5, -27), motor is at (-18.5 + 52, -27 + 2.5) = (33.5, -24.5)
         robotCtx.save();
         robotCtx.translate(33.5, -24.5);
-        
+
         // Define motor sectional fills (using manual rects to match SVG look)
         robotCtx.fillStyle = motorLightGrey;
         robotCtx.fillRect(0, 0, 10.5, 4);
@@ -842,7 +866,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         robotCtx.fillRect(10.5, 0, 5, 20);
         robotCtx.fillStyle = motorDarkGrey;
         robotCtx.fillRect(10.5, 6.25, 3, 7.5);
-        
+
         // Fills for protrusions (simplified)
         robotCtx.fillStyle = '#f0f0f0';
         robotCtx.fillRect(15.5, 5, 2.5, 10);
@@ -862,7 +886,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             robotCtx.strokeStyle = motorBronzeStroke;
             robotCtx.lineWidth = 0.1;
             robotCtx.beginPath();
-            if(!isBottom) {
+            if (!isBottom) {
                 robotCtx.moveTo(bx, by); robotCtx.lineTo(bx, by - 3);
                 robotCtx.arc(bx + 1, by - 3, 1, Math.PI, 0);
                 robotCtx.lineTo(bx + 2, by);
@@ -873,25 +897,25 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             }
             robotCtx.closePath();
             robotCtx.fill(); robotCtx.stroke();
-            
+
             // Hole in bronze
             robotCtx.fillStyle = '#ffffff';
             robotCtx.beginPath();
-            if(!isBottom) {
-                robotCtx.moveTo(bx+0.5, by-1); robotCtx.lineTo(bx+0.5, by-2.5);
-                robotCtx.arc(bx+1, by-2.5, 0.5, Math.PI, 0);
-                robotCtx.lineTo(bx+1.5, by-1);
+            if (!isBottom) {
+                robotCtx.moveTo(bx + 0.5, by - 1); robotCtx.lineTo(bx + 0.5, by - 2.5);
+                robotCtx.arc(bx + 1, by - 2.5, 0.5, Math.PI, 0);
+                robotCtx.lineTo(bx + 1.5, by - 1);
             } else {
-                robotCtx.moveTo(bx+0.5, by+1); robotCtx.lineTo(bx+0.5, by+2.5);
-                robotCtx.arc(bx+1, by+2.5, 0.5, Math.PI, 0, true);
-                robotCtx.lineTo(bx+1.5, by+1);
+                robotCtx.moveTo(bx + 0.5, by + 1); robotCtx.lineTo(bx + 0.5, by + 2.5);
+                robotCtx.arc(bx + 1, by + 2.5, 0.5, Math.PI, 0, true);
+                robotCtx.lineTo(bx + 1.5, by + 1);
             }
             robotCtx.closePath();
             robotCtx.fill(); robotCtx.stroke();
         };
         drawBronze(11.5, 6.25, false);
         drawBronze(11.5, 13.75, true);
-        
+
         robotCtx.restore();
 
         // --- DRAW GEARBOX (On Top) ---
@@ -1027,6 +1051,9 @@ function animate() {
     lastFrameTime = now;
 
     if (isPlaying) {
+        // 確保參數化 SVG 在最初幾幀能成功覆蓋 svgs.js 的非同步加載結果
+        if (globalSimTime < 1.0) updateLegSVGPath(); 
+
         theta += simSpeed;
         globalSimTime += dt;
 
@@ -1212,10 +1239,12 @@ const setupSlider = (id, valId, callback) => {
 
 setupSlider('lLegSlider', 'lLegVal', (v) => {
     L_leg = v;
-    // 同步 L_foot 以強制維持 SVG 視覺幾何的正確比例 (尖端與支點的比例 = 41.54:45)
-    L_foot = L_leg * (41.54 / 45);
+    // 物理腳長鎖定在 39.17 SVG 比例，確保與原始設計型態一致且確實貼地
+    L_foot = (25.0 * globalScale) * (39.17 / 45);
     document.getElementById('lFootSlider').value = L_foot / globalScale;
     document.getElementById('lFootVal').innerText = (L_foot / globalScale).toFixed(1) + " (Fixed)";
+
+    updateLegSVGPath(); // 動態更新 SVG 路徑，防止腳掌縮放
 });
 setupSlider('lBlueSlider', 'lBlueVal', (v) => L_blue = v);
 // L_footSlider 不再負責手動調整，已被鎖死

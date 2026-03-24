@@ -55,6 +55,13 @@ const gearboxStroke = '#fdfbf7';
 const gearboxAnnulusFill = '#808082';
 const gearboxHoleFill = '#000000';
 
+// Motor Colors (Reference from 馬達.html)
+const motorLightGrey = '#e5e5e5';
+const motorMediumGrey = '#bbbbbb';
+const motorDarkGrey = '#7a7a7a';
+const motorBronze = '#cd7f32';
+const motorBronzeStroke = '#8b4513';
+
 // Viewport Settings
 const scale = 3.5;
 const cx = canvas.width / 2;
@@ -806,17 +813,89 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         drawLine(Pf, { x: Pf.x, y: bodyY }, '#64748b', connection_width, robotCtx);
         drawLine(Pr, { x: Pr.x, y: bodyY }, '#64748b', connection_width, robotCtx);
 
-        // 7.4 Draw Gearbox to robot buffer
+        // 7.4 Draw Motor & Gearbox to robot buffer
         const bodyCenterPos = mapCoords({ x: gearboxShiftX, y: bodyY });
         const bp1 = mapCoords({ x: -S, y: bodyY });
         const bp2 = mapCoords({ x: S, y: bodyY });
         const bodyAngle = Math.atan2(bp2.y - bp1.y, bp2.x - bp1.x);
 
+        const customGearboxScale = (bodyYOffset * scale - 6) / 12.5;
+
         robotCtx.save();
         robotCtx.translate(bodyCenterPos.x, bodyCenterPos.y);
         robotCtx.rotate(bodyAngle);
-        const customGearboxScale = (bodyYOffset * scale - 6) / 12.5;
         robotCtx.scale(customGearboxScale, customGearboxScale);
+
+        // --- DRAW MOTOR (Below Gearbox) ---
+        // Motor is translated by (52, 2.5) relative to gearbox (0,0)
+        // Since gearbox is translated by (-18.5, -27), motor is at (-18.5 + 52, -27 + 2.5) = (33.5, -24.5)
+        robotCtx.save();
+        robotCtx.translate(33.5, -24.5);
+        
+        // Define motor sectional fills (using manual rects to match SVG look)
+        robotCtx.fillStyle = motorLightGrey;
+        robotCtx.fillRect(0, 0, 10.5, 4);
+        robotCtx.fillRect(0, 16, 10.5, 4);
+        robotCtx.fillStyle = motorMediumGrey;
+        robotCtx.fillRect(0, 4, 10.5, 12);
+        robotCtx.fillStyle = '#ffffff';
+        robotCtx.fillRect(10.5, 0, 5, 20);
+        robotCtx.fillStyle = motorDarkGrey;
+        robotCtx.fillRect(10.5, 6.25, 3, 7.5);
+        
+        // Fills for protrusions (simplified)
+        robotCtx.fillStyle = '#f0f0f0';
+        robotCtx.fillRect(15.5, 5, 2.5, 10);
+        robotCtx.fillStyle = '#DCDCDC';
+        robotCtx.fillRect(18.0, 9, 1.0, 2);
+
+        // Motor Outline
+        robotCtx.strokeStyle = '#333333';
+        robotCtx.lineWidth = 0.1;
+        if (typeof motorSVGPath !== 'undefined') {
+            robotCtx.stroke(motorSVGPath);
+        }
+
+        // Bronze Parts
+        const drawBronze = (bx, by, isBottom) => {
+            robotCtx.fillStyle = motorBronze;
+            robotCtx.strokeStyle = motorBronzeStroke;
+            robotCtx.lineWidth = 0.1;
+            robotCtx.beginPath();
+            if(!isBottom) {
+                robotCtx.moveTo(bx, by); robotCtx.lineTo(bx, by - 3);
+                robotCtx.arc(bx + 1, by - 3, 1, Math.PI, 0);
+                robotCtx.lineTo(bx + 2, by);
+            } else {
+                robotCtx.moveTo(bx, by); robotCtx.lineTo(bx, by + 3);
+                robotCtx.arc(bx + 1, by + 3, 1, Math.PI, 0, true);
+                robotCtx.lineTo(bx + 2, by);
+            }
+            robotCtx.closePath();
+            robotCtx.fill(); robotCtx.stroke();
+            
+            // Hole in bronze
+            robotCtx.fillStyle = '#ffffff';
+            robotCtx.beginPath();
+            if(!isBottom) {
+                robotCtx.moveTo(bx+0.5, by-1); robotCtx.lineTo(bx+0.5, by-2.5);
+                robotCtx.arc(bx+1, by-2.5, 0.5, Math.PI, 0);
+                robotCtx.lineTo(bx+1.5, by-1);
+            } else {
+                robotCtx.moveTo(bx+0.5, by+1); robotCtx.lineTo(bx+0.5, by+2.5);
+                robotCtx.arc(bx+1, by+2.5, 0.5, Math.PI, 0, true);
+                robotCtx.lineTo(bx+1.5, by+1);
+            }
+            robotCtx.closePath();
+            robotCtx.fill(); robotCtx.stroke();
+        };
+        drawBronze(11.5, 6.25, false);
+        drawBronze(11.5, 13.75, true);
+        
+        robotCtx.restore();
+
+        // --- DRAW GEARBOX (On Top) ---
+        robotCtx.save();
         robotCtx.translate(-18.5, -27);
         robotCtx.fillStyle = gearboxFill;
         robotCtx.strokeStyle = gearboxStroke;
@@ -833,6 +912,8 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         };
         drawHoleDetail(11.5, 12.5);
         drawHoleDetail(25.0, 12.5);
+        robotCtx.restore();
+
         robotCtx.restore();
 
         // 7.5 Draw Body Main Beam & Pivot Points to robot buffer

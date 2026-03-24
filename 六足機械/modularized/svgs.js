@@ -6,23 +6,26 @@ let legSVGPath = new Path2D();
 let rodSVGPath = new Path2D();
 let gearboxSVGPath = new Path2D();
 let crankSVGPath = new Path2D();
+let motorSVGPath = new Path2D();
 
 async function loadExternalSVGs() {
     try {
         // 發出 HTTP 請求，取得上一層 SVG 資料夾中的原始檔案
-        const [legRes, rodRes, gearboxRes, crankRes] = await Promise.all([
+        const [legRes, rodRes, gearboxRes, crankRes, motorRes] = await Promise.all([
             fetch('../SVG/腳.html'),
             fetch('../SVG/直杆.html'),
             fetch('../SVG/齒輪箱.html'),
-            fetch('../SVG/曲柄.html')
+            fetch('../SVG/曲柄.html'),
+            fetch('../SVG/馬達.html')
         ]);
 
-        if (!legRes.ok || !rodRes.ok || !gearboxRes.ok || !crankRes.ok) throw new Error(`HTTP 請求狀態異常`);
+        if (!legRes.ok || !rodRes.ok || !gearboxRes.ok || !crankRes.ok || !motorRes.ok) throw new Error(`HTTP 請求狀態異常`);
 
         const legText = await legRes.text();
         const rodText = await rodRes.text();
         const gearboxText = await gearboxRes.text();
         const crankText = await crankRes.text();
+        const motorText = await motorRes.text();
 
         // 使用瀏覽器內建的 DOMParser 解析 HTML/SVG 字串以萃取所有向量形狀
         const extractAllToPath2D = (htmlStr) => {
@@ -30,11 +33,16 @@ async function loadExternalSVGs() {
             const doc = parser.parseFromString(htmlStr, "text/html");
             let dString = "";
 
+            // 移除所有在 <defs> 中的內容，避免裁切路徑等被誤認為是圖形
+            doc.querySelectorAll('defs').forEach(d => d.remove());
+            // 移除帶有 .fill-only 類別的元素，這些通常只用於預覽而不應被繪製輪廓
+            doc.querySelectorAll('.fill-only').forEach(f => f.remove());
+
             // 處理 <path>
             doc.querySelectorAll('path').forEach(p => {
                 dString += p.getAttribute('d') + " ";
             });
-            // 處理 <rect> 轉換為 SVG path (M x,y h w v h h -w Z)
+            // 處理 <rect> 轉換為 SVG path
             doc.querySelectorAll('rect').forEach(r => {
                 let x = parseFloat(r.getAttribute('x') || 0);
                 let y = parseFloat(r.getAttribute('y') || 0);
@@ -65,6 +73,7 @@ async function loadExternalSVGs() {
         rodSVGPath = extractAllToPath2D(rodText);
         gearboxSVGPath = extractAllToPath2D(gearboxText);
         crankSVGPath = extractAllToPath2D(crankText);
+        motorSVGPath = extractAllToPath2D(motorText);
 
         // 當非同步加載完成後，如果模擬器(simulation.js)已載入，主動觸發一次重繪來將圖形顯示在畫布上
         if (typeof triggerUpdate === 'function') {

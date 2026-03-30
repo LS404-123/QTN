@@ -60,6 +60,20 @@
 *   **HTML5 Canvas**：高效能 2D 渲染。
 *   **CSS3**：響應式控制面板介面。
 
+## 專案結構 (Project Structure)
+
+```text
+.
+├── .github/                # GitHub 專案配置 (Issue Templates)
+├── 六足機械/                # 六足機器人相關模組與 SVG
+├── 蹦跳機械/                # 蹦跳機器人模擬與 Python 腳本
+├── Old_simulation/        # (已忽略) 舊版模擬備份
+├── index.html             # 專案入口
+├── README.md              # 專案說明文件
+├── LICENSE                # MIT 授權條款
+└── CONTRIBUTING.md        # 貢獻指南
+```
+
 ## 快速開始
 
 直接在任何現代瀏覽器（Chrome, Safari, Firefox）中開啟 `六足機械模擬latest.html` 即可開始模擬。

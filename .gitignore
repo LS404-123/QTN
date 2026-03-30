@@ -1,0 +1,40 @@
+# OS related
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE related
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+.agents/
+buffer/
+Old_simulation/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Web
+node_modules/
+dist/
+build/
+.cache/
+.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+*.log

@@ -11,15 +11,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #030712;
-            --glass: rgba(17, 24, 39, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.08);
+            --bg: #fdfdfd;
+            --glass: rgba(255, 255, 255, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.4);
             --accent-yellow: #facc15;
+            --accent-green: #4ade80;
             --accent-blue: #38bdf8;
-            --accent-pink: #f472b6;
-            --text-primary: #f9fafb;
-            --text-secondary: #9ca3af;
+            --accent-pink: #fb7185;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
             --font-main: 'Outfit', 'Noto Sans TC', sans-serif;
+            --shadow-soft: 0 20px 40px rgba(0, 0, 0, 0.08);
+            --shadow-vivid: 0 15px 30px rgba(74, 222, 128, 0.2);
         }
 
         * {
@@ -29,7 +32,7 @@
         }
 
         body {
-            background-color: var(--bg);
+            background: linear-gradient(135deg, #fefce8 0%, #f0fdf4 50%, #ecfeff 100%);
             color: var(--text-primary);
             font-family: var(--font-main);
             min-height: 100vh;
@@ -39,20 +42,27 @@
             align-items: center;
             justify-content: center;
             position: relative;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
         }
 
-        /* Ambient Background Background */
-        .ambient-bg {
+        /* Ambient Background Elements */
+        .ambient-blob {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(250, 204, 21, 0.15) 0%, transparent 70%);
             z-index: -2;
-            background: 
-                radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.1), transparent 40%),
-                radial-gradient(circle at 80% 80%, rgba(244, 114, 182, 0.1), transparent 40%),
-                radial-gradient(circle at 50% 50%, rgba(250, 204, 21, 0.05), transparent 50%);
+            filter: blur(80px);
+            animation: move 20s infinite alternate;
+        }
+
+        @keyframes move {
+            from { transform: translate(-20%, -20%); }
+            to { transform: translate(20%, 20%); }
         }
 
         /* Floating Mascots */
@@ -60,19 +70,19 @@
             position: fixed;
             pointer-events: none;
             z-index: -1;
-            filter: blur(2px) opacity(0.5);
+            filter: drop-shadow(0 10px 20px rgba(0,0,0,0.05)) opacity(0.7);
             animation: float 10s ease-in-out infinite;
         }
 
         @keyframes float {
-            0%, 100% { transform: translateY(0) rotate(0deg); }
-            50% { transform: translateY(-30px) rotate(10deg); }
+            0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+            50% { transform: translateY(-30px) rotate(5deg) scale(1.05); }
         }
 
-        .m-1 { top: 10%; left: 5%; width: 150px; animation-delay: 0s; }
-        .m-2 { bottom: 15%; right: 10%; width: 180px; animation-delay: -2s; }
-        .m-3 { top: 70%; left: 10%; width: 120px; animation-delay: -5s; }
-        .m-4 { top: 15%; right: 5%; width: 140px; animation-delay: -7s; }
+        .m-1 { top: 10%; left: 5%; width: 160px; animation-delay: 0s; }
+        .m-2 { bottom: 10%; right: 5%; width: 200px; animation-delay: -2.5s; }
+        .m-3 { top: 60%; left: 8%; width: 130px; animation-delay: -5s; }
+        .m-4 { top: 15%; right: 10%; width: 150px; animation-delay: -7.5s; }
 
         /* Content Container */
         .container {
@@ -84,123 +94,126 @@
         }
 
         header {
-            margin-bottom: 4rem;
+            margin-bottom: 5rem;
         }
 
         h1 {
-            font-size: 6rem;
+            font-size: 6.5rem;
             font-weight: 800;
-            letter-spacing: -0.02em;
+            letter-spacing: -0.01em;
             margin-bottom: 1rem;
-            background: linear-gradient(135deg, var(--accent-yellow), var(--accent-blue), var(--accent-pink));
+            background: linear-gradient(135deg, #eab308, #22c55e, #06b6d4);
             -webkit-background-clip: text;
             background-clip: text;
             -webkit-text-fill-color: transparent;
             text-transform: uppercase;
-            filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.3));
+            filter: drop-shadow(0 10px 15px rgba(34, 197, 94, 0.2));
             animation: fadeInDown 1s cubic-bezier(0.19, 1, 0.22, 1);
         }
 
         .subtitle {
-            font-size: 1.5rem;
+            font-size: 1.6rem;
             color: var(--text-secondary);
-            font-weight: 300;
-            letter-spacing: 0.1em;
+            font-weight: 400;
+            letter-spacing: 0.15em;
             animation: fadeIn 1.5s ease-out;
         }
 
         /* Card System */
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 2.5rem;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 3rem;
             margin-top: 2rem;
         }
 
         .card {
             background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 24px;
-            padding: 3rem 2rem;
+            border: 2px solid var(--glass-border);
+            border-radius: 32px;
+            padding: 4rem 2.5rem;
             text-decoration: none;
             color: var(--text-primary);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+            transition: all 0.6s cubic-bezier(0.23, 1, 0.32, 1);
             position: relative;
             overflow: hidden;
             display: flex;
             flex-direction: column;
             align-items: center;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            box-shadow: var(--shadow-soft);
         }
 
-        .card::before {
+        .card::after {
             content: '';
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.05), transparent);
-            transform: translateX(-100%);
-            transition: 0.6s;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.4), transparent);
+            opacity: 0;
+            transition: opacity 0.4s;
         }
 
         .card:hover {
-            transform: translateY(-15px) scale(1.02);
-            border-color: rgba(255, 255, 255, 0.2);
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            transform: translateY(-20px) scale(1.03);
+            border-color: #4ade80;
+            box-shadow: var(--shadow-vivid);
         }
 
-        .card:hover::before {
-            transform: translateX(100%);
+        .card:hover::after {
+            opacity: 1;
         }
 
         .card-image {
-            width: 120px;
-            height: 120px;
-            margin-bottom: 2rem;
+            width: 140px;
+            height: 140px;
+            margin-bottom: 2.5rem;
             transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.3));
+            filter: drop-shadow(0 15px 25px rgba(0,0,0,0.1));
+            z-index: 2;
         }
 
         .card:hover .card-image {
-            transform: scale(1.2) rotate(5deg);
+            transform: scale(1.25) rotate(8deg);
         }
 
         .card h2 {
-            font-size: 2rem;
-            margin-bottom: 1rem;
+            font-size: 2.2rem;
+            margin-bottom: 1.2rem;
             font-weight: 700;
+            z-index: 2;
         }
 
         .card p {
-            font-size: 1rem;
+            font-size: 1.1rem;
             color: var(--text-secondary);
-            line-height: 1.6;
+            line-height: 1.7;
+            z-index: 2;
         }
 
         .card .btn {
-            margin-top: 2rem;
-            padding: 0.8rem 2rem;
-            background: rgba(255, 255, 255, 0.1);
+            margin-top: 2.5rem;
+            padding: 1rem 2.5rem;
+            background: linear-gradient(135deg, #4ade80, #38bdf8);
+            color: white;
             border-radius: 100px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.1em;
-            transition: 0.3s;
+            transition: 0.4s;
+            box-shadow: 0 10px 20px rgba(74, 222, 128, 0.3);
+            z-index: 2;
         }
 
         .card:hover .btn {
-            background: var(--text-primary);
-            color: var(--bg);
+            transform: scale(1.1);
+            box-shadow: 0 15px 30px rgba(56, 189, 248, 0.4);
+            filter: brightness(1.1);
         }
 
         /* Animations */
         @keyframes fadeInDown {
-            from { opacity: 0; transform: translateY(-50px); }
+            from { opacity: 0; transform: translateY(-60px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
@@ -210,23 +223,24 @@
         }
 
         footer {
-            margin-top: 6rem;
+            margin-top: 8rem;
             color: var(--text-secondary);
-            font-size: 0.9rem;
-            letter-spacing: 0.1em;
+            font-size: 1rem;
+            font-weight: 400;
+            letter-spacing: 0.2em;
         }
 
         /* Mobile Adjustments */
         @media (max-width: 768px) {
-            h1 { font-size: 3.5rem; }
+            h1 { font-size: 3.8rem; }
             .grid { grid-template-columns: 1fr; }
-            .mascot-decoration { display: none; }
+            .mascot-decoration { width: 100px; opacity: 0.5; }
         }
     </style>
 </head>
 
 <body>
-    <div class="ambient-bg"></div>
+    <div class="ambient-blob"></div>
 
     <!-- Background Decorations -->
     <img src="./photo_resource/still_mascot/A.ver2 2.png" alt="" class="mascot-decoration m-1">
@@ -237,29 +251,29 @@
     <div class="container">
         <header>
             <h1>QTland</h1>
-            <p class="subtitle">探索機器人的奇幻世界</p>
+            <p class="subtitle">✨ 探索機器人的奇幻世界 ✨</p>
         </header>
 
         <main class="grid">
             <!-- Hexapod -->
             <a href="./六足機械/modularized/index.html" class="card">
-                <img src="./photo_resource/still_mascot/A.ver2 2.png" alt="Hexapod" class="card-image">
+                <img src="./photo_resource/robot_symbol/E001-1.png" alt="Hexapod" class="card-image">
                 <h2>六足機器人</h2>
                 <p>沉浸式步行機制模擬。透過先進的動力學運算，體驗六足機械的動作協調與靈活性。</p>
-                <div class="btn">進入模擬區</div>
+                <div class="btn">進入模擬專區</div>
             </a>
 
             <!-- Jumping -->
             <a href="./蹦跳機械/蹦跳機械.html" class="card">
-                <img src="./photo_resource/still_mascot/E.ver2 2.png" alt="Jumping" class="card-image">
+                <img src="./photo_resource/robot_symbol/A001-1.png" alt="Jumping" class="card-image">
                 <h2>蹦跳機器人</h2>
                 <p>基於物理引擎的統一路徑動態模擬。挑戰重力，探索機械運動的極致彈跳美學。</p>
-                <div class="btn">進入模擬區</div>
+                <div class="btn">啟動彈跳實驗</div>
             </a>
         </main>
 
         <footer>
-            &copy; 2026 QTland. All Rights Reserved.
+            &copy; 2026 QTLAND ADVENTURE.
         </footer>
     </div>
 </body>

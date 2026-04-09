@@ -1,0 +1,27 @@
+{
+  "name": "qtn",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "QTland - 機器人模擬中心",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LS404-123/robot_simulation-.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/LS404-123/robot_simulation-/issues"
+  },
+  "homepage": "https://github.com/LS404-123/robot_simulation-#readme",
+  "devDependencies": {
+    "vite": "^8.0.7"
+  }
+}

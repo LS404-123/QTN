@@ -1,202 +1,266 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-TW" dir="ltr">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>機器人模擬中心</title>
+    <title>QTland | 機器人未來世界</title>
+    <meta name="description" content="QTland - 探索最前衛的六足與蹦跳機器人模擬技術，體驗未來的奇幻世界。">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0f172a;
-            --card-bg: rgba(30, 41, 59, 0.7);
-            --card-border: rgba(255, 255, 255, 0.1);
-            --text-main: #f8fafc;
-            --text-secondary: #94a3b8;
-            --accent-1: #3b82f6;
-            --accent-2: #8b5cf6;
-            --hover-accent: #60a5fa;
+            --bg: #030712;
+            --glass: rgba(17, 24, 39, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --accent-yellow: #facc15;
+            --accent-blue: #38bdf8;
+            --accent-pink: #f472b6;
+            --text-primary: #f9fafb;
+            --text-secondary: #9ca3af;
+            --font-main: 'Outfit', 'Noto Sans TC', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
         body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            background-color: var(--bg-color);
-            background-image:
-                radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.15), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.15), transparent 25%);
-            color: var(--text-main);
+            background-color: var(--bg);
+            color: var(--text-primary);
+            font-family: var(--font-main);
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }
-
-        h1 {
-            font-size: 3rem;
-            margin-bottom: 0.5rem;
-            text-align: center;
-            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            animation: fadeInDown 0.8s ease-out;
-        }
-
-        p.subtitle {
-            color: var(--text-secondary);
-            font-size: 1.1rem;
-            margin-bottom: 3rem;
-            animation: fadeIn 1s ease-out 0.3s both;
-        }
-
-        .container {
-            display: flex;
-            gap: 2rem;
-            max-width: 1000px;
-            width: 90%;
-            perspective: 1000px;
-        }
-
-        .card {
-            flex: 1;
-            background: var(--card-bg);
-            border: 1px solid var(--card-border);
-            border-radius: 16px;
-            padding: 2.5rem 2rem;
-            text-decoration: none;
-            color: var(--text-main);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            overflow-x: hidden;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             position: relative;
-            overflow: hidden;
-            animation: fadeInUp 0.8s ease-out 0.5s both;
         }
 
-        .card:nth-child(2) {
-            animation-delay: 0.7s;
+        /* Ambient Background Background */
+        .ambient-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -2;
+            background: 
+                radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.1), transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(244, 114, 182, 0.1), transparent 40%),
+                radial-gradient(circle at 50% 50%, rgba(250, 204, 21, 0.05), transparent 50%);
+        }
+
+        /* Floating Mascots */
+        .mascot-decoration {
+            position: fixed;
+            pointer-events: none;
+            z-index: -1;
+            filter: blur(2px) opacity(0.5);
+            animation: float 10s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-30px) rotate(10deg); }
+        }
+
+        .m-1 { top: 10%; left: 5%; width: 150px; animation-delay: 0s; }
+        .m-2 { bottom: 15%; right: 10%; width: 180px; animation-delay: -2s; }
+        .m-3 { top: 70%; left: 10%; width: 120px; animation-delay: -5s; }
+        .m-4 { top: 15%; right: 5%; width: 140px; animation-delay: -7s; }
+
+        /* Content Container */
+        .container {
+            max-width: 1200px;
+            width: 90%;
+            text-align: center;
+            padding: 2rem;
+            z-index: 1;
+        }
+
+        header {
+            margin-bottom: 4rem;
+        }
+
+        h1 {
+            font-size: 6rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--accent-yellow), var(--accent-blue), var(--accent-pink));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.3));
+            animation: fadeInDown 1s cubic-bezier(0.19, 1, 0.22, 1);
+        }
+
+        .subtitle {
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+            font-weight: 300;
+            letter-spacing: 0.1em;
+            animation: fadeIn 1.5s ease-out;
+        }
+
+        /* Card System */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2.5rem;
+            margin-top: 2rem;
+        }
+
+        .card {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 3rem 2rem;
+            text-decoration: none;
+            color: var(--text-primary);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         }
 
         .card::before {
             content: '';
             position: absolute;
             top: 0;
-            left: -100%;
-            width: 50%;
+            left: 0;
+            width: 100%;
             height: 100%;
-            background: linear-gradient(to right,
-                    transparent,
-                    rgba(255, 255, 255, 0.05),
-                    transparent);
-            transform: skewX(-20deg);
-            transition: 0.5s;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+            transform: translateX(-100%);
+            transition: 0.6s;
         }
 
         .card:hover {
-            transform: translateY(-10px) scale(1.02);
+            transform: translateY(-15px) scale(1.02);
             border-color: rgba(255, 255, 255, 0.2);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
         }
 
         .card:hover::before {
-            left: 150%;
+            transform: translateX(100%);
         }
 
-        .card-icon {
-            font-size: 3.5rem;
-            margin-bottom: 1.5rem;
-            display: inline-block;
-            transition: transform 0.3s ease;
+        .card-image {
+            width: 120px;
+            height: 120px;
+            margin-bottom: 2rem;
+            transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.3));
         }
 
-        .card:hover .card-icon {
-            transform: scale(1.1) rotate(5deg);
+        .card:hover .card-image {
+            transform: scale(1.2) rotate(5deg);
         }
 
         .card h2 {
-            font-size: 1.5rem;
-            margin: 0 0 0.5rem 0;
-            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            font-weight: 700;
         }
 
         .card p {
+            font-size: 1rem;
             color: var(--text-secondary);
-            text-align: center;
-            margin: 0;
-            font-size: 0.95rem;
-            line-height: 1.5;
+            line-height: 1.6;
+        }
+
+        .card .btn {
+            margin-top: 2rem;
+            padding: 0.8rem 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 100px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            transition: 0.3s;
+        }
+
+        .card:hover .btn {
+            background: var(--text-primary);
+            color: var(--bg);
         }
 
         /* Animations */
         @keyframes fadeInDown {
-            from {
-                opacity: 0;
-                transform: translateY(-20px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(-50px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-
-            to {
-                opacity: 1;
-            }
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
 
-        @media (max-width: 768px) {
-            .container {
-                flex-direction: column;
-            }
+        footer {
+            margin-top: 6rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            letter-spacing: 0.1em;
+        }
 
-            h1 {
-                font-size: 2.5rem;
-            }
+        /* Mobile Adjustments */
+        @media (max-width: 768px) {
+            h1 { font-size: 3.5rem; }
+            .grid { grid-template-columns: 1fr; }
+            .mascot-decoration { display: none; }
         }
     </style>
 </head>
 
 <body>
-    <h1>機器人模擬中心</h1>
-    <p class="subtitle">選擇要啟動的模擬環境</p>
+    <div class="ambient-bg"></div>
+
+    <!-- Background Decorations -->
+    <img src="./photo_resource/still_mascot/A.ver2 2.png" alt="" class="mascot-decoration m-1">
+    <img src="./photo_resource/still_mascot/S.ver2 2.png" alt="" class="mascot-decoration m-2">
+    <img src="./photo_resource/still_mascot/T.ver2 2.png" alt="" class="mascot-decoration m-3">
+    <img src="./photo_resource/still_mascot/M.ver2 2.png" alt="" class="mascot-decoration m-4">
 
     <div class="container">
-        <!--Hexapod Robot Link-->
-        <a href="./六足機械/modularized/index.html" class="card">
-            <h2>六足機器人</h2>
-            <p>六足步行機制的互動式模擬環境。</p>
-        </a>
+        <header>
+            <h1>QTland</h1>
+            <p class="subtitle">探索機器人的奇幻世界</p>
+        </header>
 
-        <!--Jumping Robot Link-->
-        <a href="./蹦跳機械/蹦跳機械.html" class="card">
-            <h2>蹦跳機器人</h2>
-            <p>基於物理的統一蹦跳機器人運動學模擬。</p>
-        </a>
+        <main class="grid">
+            <!-- Hexapod -->
+            <a href="./六足機械/modularized/index.html" class="card">
+                <img src="./photo_resource/still_mascot/A.ver2 2.png" alt="Hexapod" class="card-image">
+                <h2>六足機器人</h2>
+                <p>沉浸式步行機制模擬。透過先進的動力學運算，體驗六足機械的動作協調與靈活性。</p>
+                <div class="btn">進入模擬區</div>
+            </a>
+
+            <!-- Jumping -->
+            <a href="./蹦跳機械/蹦跳機械.html" class="card">
+                <img src="./photo_resource/still_mascot/E.ver2 2.png" alt="Jumping" class="card-image">
+                <h2>蹦跳機器人</h2>
+                <p>基於物理引擎的統一路徑動態模擬。挑戰重力，探索機械運動的極致彈跳美學。</p>
+                <div class="btn">進入模擬區</div>
+            </a>
+        </main>
+
+        <footer>
+            &copy; 2026 QTland. All Rights Reserved.
+        </footer>
     </div>
 </body>
 

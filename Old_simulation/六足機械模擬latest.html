@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>六足機器人模擬器 - 姿態控制與效能統計</title>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --bg: #f0f4f8;
+            --card-bg: #ffffff;
+            --text-main: #1a202c;
+            --text-muted: #475569;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 2rem 1rem;
+            color: var(--text-main);
+        }
+
+        h2 {
+            margin-top: 0;
+            color: var(--text-main);
+            font-weight: 700;
+        }
+
+        #simCanvas {
+            background-color: #0f172a;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+            margin-bottom: 24px;
+            max-width: 100%;
+            height: auto;
+        }
+
+        .control-panel {
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 100%;
+            max-width: 900px;
+            box-sizing: border-box;
+        }
+
+        .control-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-divider {
+            width: 100%;
+            height: 1px;
+            background-color: var(--border);
+            margin: 4px 0;
+        }
+
+        .section-title {
+            width: 100%;
+            font-weight: 700;
+            color: var(--text-muted);
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1 1 240px;
+            background: #f8fafc;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+
+        input[type="range"] {
+            flex-grow: 1;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        button {
+            padding: 12px 20px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--primary);
+            color: white;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        label,
+        span {
+            font-size: 14px;
+            color: var(--text-muted);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        label {
+            width: 100px;
+        }
+
+        .val-display {
+            min-width: 110px;
+            text-align: right;
+            color: var(--primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+        }
+
+        select {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: white;
+            font-size: 14px;
+            color: var(--text-main);
+            outline: none;
+            cursor: pointer;
+            flex-grow: 1;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 8px 12px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        @media (max-width: 600px) {
+            .slider-group {
+                flex: 1 1 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>運動學模擬器：六足姿態控制與數據統計</h2>
+    <canvas id="simCanvas" width="900" height="500"></canvas>
+
+    <div class="control-panel">
+        <div class="control-row">
+            <button id="toggleBtn">暫停自動播放</button>
+            <button id="periodBtn">播放一個週期</button>
+            <button id="clearBtn" style="background-color: #64748b;">清除軌跡</button>
+            <label class="checkbox-label">
+                <input type="checkbox" id="showPathsCheck"> <span>顯示軌跡</span>
+            </label>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="control-row">
+            <div class="slider-group">
+                <label for="speedSlider">模擬速度</label>
+                <input type="range" id="speedSlider" min="0.1" max="0.2" step="0.01" value="0.1">
+                <span class="val-display" id="speedVal">Low in battery</span>
+            </div>
+            <div class="slider-group">
+                <label for="povSelect">視角模式</label>
+                <select id="povSelect">
+                    <option value="robot">以機器人為中心</option>
+                    <option value="world" selected>以世界為中心</option>
+                </select>
+            </div>
+            <div class="slider-group">
+                <label for="angleSlider">手動角度</label>
+                <input type="range" id="angleSlider" min="0" max="360" step="1" value="0">
+                <span class="val-display" id="angleVal">0°</span>
+            </div>
+            <div class="slider-group">
+                <label for="phaseSlider">相位差</label>
+                <!-- 相位差範圍調整為 0 ~ 180 -->
+                <input type="range" id="phaseSlider" min="0" max="180" step="1" value="180">
+                <span class="val-display" id="phaseVal">180°</span>
+            </div>
+        </div>
+
+        <div class="section-title">連桿幾何參數設定</div>
+
+        <div class="control-row">
+            <div class="slider-group">
+                <label for="lLegSlider">腿長 (L<sub>leg</sub>)</label>
+                <input type="range" id="lLegSlider" min="10" max="60" step="1" value="25">
+                <span class="val-display" id="lLegVal">25</span>
+            </div>
+            <div class="slider-group">
+                <label for="lBlueSlider">臂長 (L<sub>blue</sub>)</label>
+                <input type="range" id="lBlueSlider" min="40" max="100" step="1" value="55">
+                <span class="val-display" id="lBlueVal">55</span>
+            </div>
+            <div class="slider-group" style="opacity: 0.6; pointer-events: none;" title="固鎖以配合 SVG 比例 (36:45)">
+                <label for="lFootSlider">腳長 (L<sub>foot</sub>)</label>
+                <input type="range" id="lFootSlider" min="10" max="60" step="1" value="20" disabled>
+                <span class="val-display" id="lFootVal">20 (Fixed)</span>
+            </div>
+            <div class="slider-group">
+                <label for="rSlider">曲柄半徑 (R)</label>
+                <input type="range" id="rSlider" min="5" max="30" step="1" value="5">
+                <span class="val-display" id="rVal">5</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Hexapod Simulator - Kinematics and Physics Logic
+         */
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Fixed Machine Geometry Constants
+        // Machine Geometry Parameters
+        let globalScale = 1.5;      // Global scaling factor
+        let pivotYOffset = 0.0;    // Y-offset for Pf and Pr (lower than middle)
+        let bodyYOffset = 8.0 * globalScale; // Vertical offset for the main body
+
+        let S = 48.0 * globalScale;
+        let groundY_Ideal = -51.5 * globalScale;
+        let Pf = { x: -S, y: -pivotYOffset * globalScale };
+        let Pr = { x: S, y: -pivotYOffset * globalScale };
+        const C_crank = { x: 0, y: 0 };
+
+        // State & Modifiable parameters
+        let R = 5.0 * globalScale;
+        let L_leg = 25.0 * globalScale;
+        let L_blue = 55.0 * globalScale;
+        let L_foot = 25.0 * (36 / 45) * globalScale; // 鎖定與 SVG 的幾何比例 (腳尖:支點) = 36:45
+
+        let theta = 0;
+        let phaseDiff = Math.PI; // 相位差預設 180 度
+        let isPlaying = true;
+        let showPaths = false;
+        let simSpeed = 0.1;
+        let gravityScale = 1.5;
+        let povMode = 'world';
+
+        let paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
+        const maxPathLen = 150;
+
+        let isLooping = false;
+        let playOnePeriod = false;
+        let accumulatedTheta = 0;
+
+        // Physics State
+        let smoothedGround = { m: 0, c: groundY_Ideal };
+        let angularVel = 0;
+        let isTorqueMode = false;
+        let lockedPivot = null;
+        let lockedPivotIndex = -1;
+
+        // --- Distance & Speed Tracking Variables ---
+        // Physics & Inertia State
+        let jitterX = 0;
+        let jitterY = 0;
+        let jitterM = 0; // Tilt jitter
+        let lastFrameTime = performance.now();
+        let globalSimTime = 0; // Total accumulated simulation time
+        let prevFeet = null;
+        let prevGroundedFeetIndices = [];
+        let currentWorldX = 0;
+
+        // Per-foot tracking to precisely measure ground-contact duration and distance
+        let footTracking = Array(6).fill(null).map(() => ({ isGrounded: false, startX: 0, startTime: 0 }));
+
+        let displayDist = 0;
+        let displayTime = 0;
+        let displaySpeed = 0;
+
+        // Viewport Settings
+        const scale = 3.5;
+        const cx = canvas.width / 2;
+        // Keep ground line fixed at roughly 480px down (near bottom of 500px canvas)
+        const targetGy = 480;
+        const cy = targetGy + groundY_Ideal * scale;
+
+        /**
+         * Transforms internal coordinates to screen space based on Camera POV
+         */
+        function mapCoords(p) {
+            let rx = p.x;
+            let ry = p.y;
+
+            if (povMode === 'world') {
+                let tiltRad = -Math.atan(smoothedGround.m + jitterM); // Apply jitter to tilt
+                const cosT = Math.cos(tiltRad);
+                const sinT = Math.sin(tiltRad);
+
+                let tempX = (p.x + jitterX) * cosT - (p.y + jitterY) * sinT; // Apply jitter x, y
+                let tempY = (p.x + jitterX) * sinT + (p.y + jitterY) * cosT;
+                let finalShiftY = (smoothedGround.c * cosT) - groundY_Ideal;
+
+                rx = tempX;
+                ry = tempY - finalShiftY;
+            }
+
+            return { x: cx + rx * scale, y: cy - ry * scale };
+        }
+
+        function getIntersection(C1, r1, C2, r2) {
+            const dx = C2.x - C1.x, dy = C2.y - C1.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+
+            if (d > r1 + r2 || d < Math.abs(r1 - r2) || d === 0) return null;
+
+            const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+            const h_sq = r1 * r1 - a * a;
+            const h = Math.sqrt(Math.max(0, h_sq));
+
+            const P2x = C1.x + a * dx / d;
+            const P2y = C1.y + a * dy / d;
+
+            const P3a = { x: P2x - h * dy / d, y: P2y + h * dx / d };
+            const P3b = { x: P2x + h * dy / d, y: P2y - h * dx / d };
+
+            return (P3a.y > P3b.y) ? P3a : P3b;
+        }
+
+        function extendPoint(P_top, P_bottom, extLen) {
+            const dx = P_bottom.x - P_top.x, dy = P_bottom.y - P_top.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            return {
+                x: P_bottom.x + (dx / dist) * extLen,
+                y: P_bottom.y + (dy / dist) * extLen
+            };
+        }
+
+        function getLegPositions(angle) {
+            const ML = { x: R * Math.cos(angle), y: R * Math.sin(angle) };
+            const MT = getIntersection(ML, L_leg, Pf, L_blue);
+            const FT = getIntersection(Pf, L_leg, ML, L_blue);
+            const RT = getIntersection(Pr, L_leg, ML, L_blue);
+
+            if (!MT || !FT || !RT) return null;
+
+            const foot_f = extendPoint(FT, Pf, L_foot);
+            const foot_m = extendPoint(MT, ML, L_foot);
+            const foot_r = extendPoint(RT, Pr, L_foot);
+
+            return { ML, MT, FT, RT, foot_f, foot_m, foot_r };
+        }
+
+        // --- Drawing Core ---
+
+        const legSVGPath = new Path2D("M 21, 20 A 9,9 0 0, 1 39, 20 L 39, 72.6 Q 39, 88, 54.58, 88 A 25, 13 0 1, 1 5.42, 88 Q 21, 88, 21, 72.6 Z");
+        const rodSVGPath = new Path2D("M 5, 10 A 5,5 0 0, 1 15, 10 L 15, 102 A 5,5 0 0, 1 5, 102 Z");
+
+        function drawSVGLink(p1, p2, svgPath, h1x, h1y, h2x, h2y, strokeColor, fillColor, isFar) {
+            if (!p1 || !p2) return;
+            const m1 = mapCoords(p1), m2 = mapCoords(p2);
+            const dx = m2.x - m1.x, dy = m2.y - m1.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const svgDist = Math.sqrt(Math.pow(h2x - h1x, 2) + Math.pow(h2y - h1y, 2));
+            const scale = dist / svgDist;
+            const angle = Math.atan2(dy, dx);
+            const svgAngle = Math.atan2(h2y - h1y, h2x - h1x);
+
+            ctx.save();
+            ctx.translate(m1.x, m1.y);
+            ctx.rotate(angle - svgAngle);
+            ctx.scale(scale, scale);
+            ctx.translate(-h1x, -h1y);
+
+            ctx.globalAlpha = isFar ? 0.35 : 1.0;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 1.5 / scale;
+            if (fillColor) {
+                ctx.fillStyle = fillColor;
+                ctx.fill(svgPath);
+            }
+            ctx.stroke(svgPath);
+            ctx.restore();
+        }
+
+        function drawLine(p1, p2, color, width) {
+            if (!p1 || !p2) return;
+            const m1 = mapCoords(p1), m2 = mapCoords(p2);
+            ctx.beginPath();
+            ctx.moveTo(m1.x, m1.y);
+            ctx.lineTo(m2.x, m2.y);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+        }
+
+        function drawPath(pathArray, color, dash) {
+            if (!showPaths || pathArray.length < 2) return;
+            ctx.beginPath();
+            const start = mapCoords(pathArray[0]);
+            ctx.moveTo(start.x, start.y);
+            for (let i = 1; i < pathArray.length; i++) {
+                const pt = mapCoords(pathArray[i]);
+                ctx.lineTo(pt.x, pt.y);
+            }
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            if (dash) ctx.setLineDash(dash);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        function drawPoint(p, color, radius) {
+            const mp = mapCoords(p);
+            ctx.beginPath();
+            ctx.arc(mp.x, mp.y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
+
+        function renderSide(data, isFar) {
+            const alpha = isFar ? 0.25 : 1.0;
+            const linkColor = `rgba(96, 165, 250, ${alpha})`;
+            const legColor = `rgba(245, 158, 11, ${alpha})`;
+            const jointColor = `rgba(30, 41, 59, ${alpha})`;
+            const crankColor = `rgba(203, 213, 225, ${alpha})`;
+            const widthScale = isFar ? 0.8 : 1.0;
+
+            drawLine(C_crank, data.ML, crankColor, 4 * widthScale);
+
+            // 直杆 (Holes at cy=10, 102. Spacing = 92)
+            const rodFill = '#3b82f6';
+            drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, '#1d4ed8', rodFill, isFar);
+            drawSVGLink(Pf, data.MT, rodSVGPath, 10, 10, 10, 102, '#1d4ed8', rodFill, isFar);
+            drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, '#1d4ed8', rodFill, isFar);
+
+            // 腿 (Holes at cy=20, 65. Spacing = 45)
+            const legFill = '#facc15';
+            drawSVGLink(data.FT, Pf, legSVGPath, 30, 20, 30, 65, '#b45309', legFill, isFar);
+            drawSVGLink(data.MT, data.ML, legSVGPath, 30, 20, 30, 65, '#b45309', legFill, isFar);
+            drawSVGLink(data.RT, Pr, legSVGPath, 30, 20, 30, 65, '#b45309', legFill, isFar);
+
+            drawPoint(data.ML, jointColor, 4 * widthScale);
+            drawPoint(data.FT, jointColor, 4 * widthScale);
+            drawPoint(data.MT, jointColor, 4 * widthScale);
+            drawPoint(data.RT, jointColor, 4 * widthScale);
+        }
+
+        /**
+         * Main Render and Physics Logic Loop
+         */
+        function renderFrame(currentTheta, recordPath) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const near = getLegPositions(currentTheta);
+            const far = getLegPositions(currentTheta + phaseDiff);
+
+            if (near && far) {
+                const allFeet = [
+                    near.foot_f, near.foot_m, near.foot_r,
+                    far.foot_f, far.foot_m, far.foot_r
+                ];
+
+                // 2. Determine Static Ground Plane
+                let validLines = [];
+                for (let i = 0; i < allFeet.length; i++) {
+                    for (let j = i + 1; j < allFeet.length; j++) {
+                        let p1 = allFeet[i], p2 = allFeet[j];
+                        let dx = p2.x - p1.x;
+                        if (Math.abs(dx) < 0.01) continue;
+
+                        let m = (p2.y - p1.y) / dx;
+                        let c = p1.y - m * p1.x;
+
+                        let allAbove = true;
+                        for (let k = 0; k < allFeet.length; k++) {
+                            if (k === i || k === j) continue;
+                            if (allFeet[k].y < (m * allFeet[k].x + c) - 0.2) {
+                                allAbove = false; break;
+                            }
+                        }
+
+                        if (allAbove) {
+                            let minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x);
+                            if (minX <= 2.0 && maxX >= -2.0) validLines.push({ m, c, p1, p2 });
+                        }
+                    }
+                }
+
+                let groundLine;
+                if (validLines.length > 0) {
+                    groundLine = validLines[0];
+                } else {
+                    let lowest = allFeet.reduce((min, p) => p.y < min.y ? p : min, allFeet[0]);
+                    groundLine = { m: 0, c: lowest.y, p1: lowest, p2: lowest };
+                }
+
+                // 3. Update Physics (Tipping Dynamics)
+                const targetM = groundLine.m;
+                const targetC = groundLine.c;
+                const diffM = targetM - smoothedGround.m;
+
+                if (!isTorqueMode) {
+                    if (Math.abs(diffM) > 0.04) {
+                        isTorqueMode = true;
+                        let pivotObj = Math.abs(groundLine.p1.x) < Math.abs(groundLine.p2.x) ? groundLine.p1 : groundLine.p2;
+                        lockedPivotIndex = allFeet.indexOf(pivotObj);
+                        lockedPivot = allFeet[lockedPivotIndex];
+                    } else {
+                        smoothedGround.m = targetM;
+                        smoothedGround.c = targetC;
+                    }
+                }
+
+                if (isTorqueMode) {
+                    if (lockedPivotIndex !== -1) lockedPivot = allFeet[lockedPivotIndex];
+
+                    let damping = 0.94, stiffness = 0.008 * gravityScale;
+                    angularVel += diffM * stiffness;
+                    angularVel *= damping;
+
+                    let oldM = smoothedGround.m;
+                    smoothedGround.m += angularVel;
+                    smoothedGround.c = lockedPivot.y - (smoothedGround.m * lockedPivot.x);
+
+                    const hasOvershot = (targetM > oldM) ? (smoothedGround.m > targetM) : (smoothedGround.m < targetM);
+                    const feetClash = allFeet.some(f => f.y < (smoothedGround.m * f.x + smoothedGround.c - 0.8));
+
+                    if (hasOvershot || feetClash || Math.abs(angularVel) < 0.0001) {
+                        isTorqueMode = false;
+                        lockedPivotIndex = -1;
+                        smoothedGround.m = targetM;
+                        smoothedGround.c = targetC;
+                        angularVel = 0;
+                    }
+                }
+
+                // 4. Movement Distance Tracking (追蹤地面支點的相對位移)
+                let frameDx = 0;
+                let currentGroundedFeetIndices = [];
+
+                // 獨立判斷哪些腳目前在地上 (寬鬆觸地判定，容許 1.0 誤差)
+                for (let i = 0; i < allFeet.length; i++) {
+                    let f = allFeet[i];
+                    let expectedY = smoothedGround.m * f.x + smoothedGround.c;
+                    if (Math.abs(f.y - expectedY) < 1.0) {
+                        currentGroundedFeetIndices.push(i);
+                    }
+                }
+
+                if (prevFeet) {
+                    if (isTorqueMode && lockedPivotIndex !== -1) {
+                        // 旋轉階段只由當前鎖定的支腳產生推進位移
+                        frameDx = prevFeet[lockedPivotIndex].x - allFeet[lockedPivotIndex].x;
+                    } else {
+                        let commonFeet = currentGroundedFeetIndices.filter(idx => prevGroundedFeetIndices.includes(idx));
+                        if (commonFeet.length > 0) {
+                            let sumDx = 0;
+                            for (let idx of commonFeet) sumDx += (prevFeet[idx].x - allFeet[idx].x);
+                            frameDx = sumDx / commonFeet.length;
+                        } else if (prevGroundedFeetIndices.length > 0) {
+                            let sumDx = 0;
+                            for (let idx of prevGroundedFeetIndices) sumDx += (prevFeet[idx].x - allFeet[idx].x);
+                            frameDx = sumDx / prevGroundedFeetIndices.length;
+                        }
+                    }
+                }
+
+                prevGroundedFeetIndices = currentGroundedFeetIndices;
+                currentWorldX += frameDx;
+                prevFeet = allFeet.map(f => ({ x: f.x, y: f.y }));
+
+                // 4.5. Mechanical Inertia Reaction (慣性反作用力模擬)
+                // Use gravityScale as a mass/force multiplier
+                const forceScale = 0.05 * gravityScale;
+                // Crank reaction (equal and opposite to crank mass movement)
+                // When crank swings back (-cos), body reacts forward (+cos)
+                jitterX = -Math.cos(currentTheta) * R * forceScale;
+                jitterY = -Math.sin(currentTheta) * R * forceScale;
+                // Tilt reaction (subtle pulse at the back)
+                jitterM = Math.sin(currentTheta - Math.PI / 4) * (R / S) * forceScale;
+
+                // 5. Individual Foot Contact Tracking (單次觸地資料統計)
+                let actualGrounded = new Set(currentGroundedFeetIndices);
+                if (isTorqueMode && lockedPivotIndex !== -1) {
+                    actualGrounded.add(lockedPivotIndex);
+                }
+
+                for (let i = 0; i < 6; i++) {
+                    let isGroundedNow = actualGrounded.has(i);
+                    let track = footTracking[i];
+
+                    if (isGroundedNow && !track.isGrounded) {
+                        // Foot just touched the ground
+                        track.isGrounded = true;
+                        track.startX = currentWorldX;
+                        track.startTime = globalSimTime;
+                    } else if (!isGroundedNow && track.isGrounded) {
+                        // Foot just lifted off the ground - Calculate its duration and distance
+                        track.isGrounded = false;
+                        let dx = Math.abs(currentWorldX - track.startX);
+                        let t = globalSimTime - track.startTime;
+
+                        // Ignore extremely tiny micro-bounces (< 0.05s)
+                        if (t > 0.05) {
+                            displayDist = dx;
+                            displayTime = t;
+                            displaySpeed = t > 0 ? (dx / t) : 0;
+                        }
+                    }
+                }
+
+                // 6. Record Paths
+                if (recordPath) {
+                    paths.near.f.push({ ...near.foot_f }); paths.near.m.push({ ...near.foot_m }); paths.near.r.push({ ...near.foot_r });
+                    paths.far.f.push({ ...far.foot_f }); paths.far.m.push({ ...far.foot_m }); paths.far.r.push({ ...far.foot_r });
+
+                    if (paths.near.f.length > maxPathLen) {
+                        paths.near.f.shift(); paths.near.m.shift(); paths.near.r.shift();
+                        paths.far.f.shift(); paths.far.m.shift(); paths.far.r.shift();
+                    }
+                }
+
+                // 7. Drawing Order
+                ctx.beginPath();
+                if (povMode === 'robot') {
+                    const gX1 = -350, gX2 = 350;
+                    const gm1 = mapCoords({ x: gX1, y: smoothedGround.m * gX1 + smoothedGround.c });
+                    const gm2 = mapCoords({ x: gX2, y: smoothedGround.m * gX2 + smoothedGround.c });
+                    ctx.moveTo(gm1.x, gm1.y);
+                    ctx.lineTo(gm2.x, gm2.y);
+                } else {
+                    const gy = cy - groundY_Ideal * scale;
+                    ctx.moveTo(0, gy);
+                    ctx.lineTo(canvas.width, gy);
+                }
+                ctx.strokeStyle = '#10b981';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                drawPath(paths.far.f, 'rgba(239, 68, 68, 0.2)', [3, 3]);
+                drawPath(paths.far.m, 'rgba(34, 197, 94, 0.2)', [3, 3]);
+                drawPath(paths.far.r, 'rgba(59, 130, 246, 0.2)', [3, 3]);
+
+                drawPath(paths.near.f, 'rgba(239, 68, 68, 0.7)', [5, 5]);
+                drawPath(paths.near.m, 'rgba(34, 197, 94, 0.7)', [5, 5]);
+                drawPath(paths.near.r, 'rgba(59, 130, 246, 0.7)', [5, 5]);
+
+                renderSide(far, true);
+
+                // --- Structural Connections & Body ---
+                const bodyY = -bodyYOffset;
+                const connection_width = 12;
+                drawLine(Pf, { x: Pf.x, y: bodyY }, '#64748b', connection_width);
+                drawLine(Pr, { x: Pr.x, y: bodyY }, '#64748b', connection_width);
+                drawLine(C_crank, { x: C_crank.x, y: bodyY }, '#64748b', connection_width); // Connection to crank center
+
+                drawLine({ x: -S - 15, y: bodyY }, { x: S + 15, y: bodyY }, '#94a3b8', 12);
+
+                drawPoint(Pf, '#0f172a', 6);
+                drawPoint(Pr, '#0f172a', 6);
+                drawPoint(C_crank, '#ef4444', 7);
+
+                renderSide(near, false);
+
+                // --- HIGHLIGHT GROUND PIVOT POINTS ---
+                if (isTorqueMode && lockedPivot) {
+                    drawPoint(lockedPivot, '#ef4444', 6);
+                    const mp = mapCoords(lockedPivot);
+                    ctx.beginPath();
+                    ctx.arc(mp.x, mp.y, 14, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                } else if (prevGroundedFeetIndices && prevGroundedFeetIndices.length > 0) {
+                    for (let idx of prevGroundedFeetIndices) {
+                        let f = allFeet[idx];
+                        drawPoint(f, '#ef4444', 5);
+                        const mp = mapCoords(f);
+                        ctx.beginPath();
+                        ctx.arc(mp.x, mp.y, 10, 0, Math.PI * 2);
+                        ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                }
+
+            } else {
+                ctx.fillStyle = '#f87171';
+                ctx.font = 'bold 22px system-ui';
+                ctx.textAlign = 'center';
+                ctx.fillText('幾何約束衝突！請嘗試減小曲柄半徑。', canvas.width / 2, canvas.height / 2);
+                prevFeet = null;
+                prevGroundedFeetIndices = [];
+                // Reset tracking on clash
+                footTracking.forEach(track => track.isGrounded = false);
+            }
+
+            // 8. Render Movement Statistics Overlay (右上角數值面板)
+            drawOverlayStats();
+        }
+
+        function drawOverlayStats() {
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+            ctx.fillRect(canvas.width - 240, 15, 225, 120);
+
+            ctx.fillStyle = '#3b82f6';
+            ctx.fillRect(canvas.width - 240, 15, 4, 120);
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = 'bold 15px system-ui';
+            ctx.textAlign = 'left';
+            ctx.fillText('📊 單腳觸地推進數據', canvas.width - 220, 40);
+
+            ctx.font = '14px "JetBrains Mono", monospace';
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText('前次腳步推進: ', canvas.width - 220, 70);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillText(`${displayDist.toFixed(1)} px`, canvas.width - 110, 70);
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText('前次腳步均速: ', canvas.width - 220, 95);
+            ctx.fillStyle = '#34d399';
+            ctx.fillText(`${displaySpeed.toFixed(1)} px/s`, canvas.width - 110, 95);
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText('當前觸地進度: ', canvas.width - 220, 120);
+            ctx.fillStyle = '#facc15';
+
+            // Find the progress of the foot that has been grounded the longest currently
+            let currentActiveDist = 0;
+            let earliestStart = Infinity;
+            for (let i = 0; i < 6; i++) {
+                if (footTracking[i].isGrounded && footTracking[i].startTime < earliestStart) {
+                    earliestStart = footTracking[i].startTime;
+                    currentActiveDist = Math.abs(currentWorldX - footTracking[i].startX);
+                }
+            }
+            ctx.fillText(`${currentActiveDist.toFixed(1)} px`, canvas.width - 110, 120);
+        }
+
+        function animate() {
+            let now = performance.now();
+            let dt = (now - lastFrameTime) / 1000; // Delta time in seconds
+            lastFrameTime = now;
+
+            if (isPlaying) {
+                theta += simSpeed;
+                globalSimTime += dt;
+
+                if (playOnePeriod) {
+                    accumulatedTheta += simSpeed;
+                    if (accumulatedTheta >= Math.PI * 2) {
+                        isPlaying = false;
+                        playOnePeriod = false;
+                        accumulatedTheta = 0;
+                        document.getElementById('toggleBtn').innerText = "恢復自動播放";
+                    }
+                }
+                if (theta > Math.PI * 2) theta -= Math.PI * 2;
+
+                const deg = Math.round((theta / Math.PI) * 180);
+                document.getElementById('angleSlider').value = deg;
+                document.getElementById('angleVal').innerText = deg + '°';
+            }
+
+            renderFrame(theta, isPlaying);
+
+            if (isPlaying || isTorqueMode || Math.abs(angularVel) > 0.001) {
+                isLooping = true;
+                requestAnimationFrame(animate);
+            } else {
+                isLooping = false;
+            }
+        }
+
+        function triggerUpdate() {
+            if (!isLooping) {
+                lastFrameTime = performance.now(); // Reset time to avoid large jumps when unpausing
+                animate();
+            }
+        }
+
+        // --- Event Handlers ---
+
+        document.getElementById('toggleBtn').addEventListener('click', (e) => {
+            isPlaying = !isPlaying;
+            playOnePeriod = false;
+            e.target.innerText = isPlaying ? "暫停自動播放" : "恢復自動播放";
+            triggerUpdate();
+        });
+
+        document.getElementById('periodBtn').addEventListener('click', () => {
+            isPlaying = true;
+            playOnePeriod = true;
+            accumulatedTheta = 0;
+            document.getElementById('toggleBtn').innerText = "暫停自動播放";
+            triggerUpdate();
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
+            renderFrame(theta, false);
+        });
+
+        document.getElementById('showPathsCheck').addEventListener('change', (e) => {
+            showPaths = e.target.checked;
+            triggerUpdate();
+        });
+
+        document.getElementById('speedSlider').addEventListener('input', (e) => {
+            simSpeed = parseFloat(e.target.value);
+            let speedText = "";
+            if (simSpeed <= 0.1) speedText = "Low in battery";
+            else if (simSpeed >= 0.2) speedText = "New battery";
+            else {
+                let pct = Math.round(((simSpeed - 0.1) / 0.1) * 100);
+                speedText = `Battery: ${pct}%`;
+            }
+            document.getElementById('speedVal').innerText = speedText;
+            gravityScale = 1.0 + (simSpeed * 5);
+        });
+
+        document.getElementById('angleSlider').addEventListener('input', (e) => {
+            let deg = parseInt(e.target.value);
+            theta = (deg / 180) * Math.PI;
+            document.getElementById('angleVal').innerText = deg + '°';
+            triggerUpdate();
+        });
+
+        document.getElementById('phaseSlider').addEventListener('input', (e) => {
+            let deg = parseInt(e.target.value);
+            phaseDiff = (deg / 180) * Math.PI;
+            document.getElementById('phaseVal').innerText = deg + '°';
+            paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
+            triggerUpdate();
+        });
+
+        document.getElementById('povSelect').addEventListener('change', (e) => {
+            povMode = e.target.value;
+            paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
+            triggerUpdate();
+        });
+
+        const setupSlider = (id, valId, callback) => {
+            document.getElementById(id).addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                document.getElementById(valId).innerText = val;
+                callback(val * globalScale); // Apply globalScale here
+                paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
+                triggerUpdate();
+            });
+        };
+
+        setupSlider('lLegSlider', 'lLegVal', (v) => {
+            L_leg = v;
+            // 同步 L_foot 以強制維持 SVG 視覺幾何的正確比例 (尖端與支點的比例 = 36:45)
+            L_foot = L_leg * (36 / 45);
+            document.getElementById('lFootSlider').value = L_foot / globalScale;
+            document.getElementById('lFootVal').innerText = (L_foot / globalScale).toFixed(1) + " (Fixed)";
+        });
+        setupSlider('lBlueSlider', 'lBlueVal', (v) => L_blue = v);
+        // L_footSlider 不再負責手動調整，已被鎖死
+        setupSlider('lFootSlider', 'lFootVal', (v) => { });
+        setupSlider('rSlider', 'rVal', (v) => R = v);
+
+        // Init
+        animate();
+    </script>
+</body>
+
+</html>

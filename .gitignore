@@ -10,9 +10,10 @@ Desktop.ini
 *.swo
 
 # Project specific
-.agents/
-buffer/
-Old_simulation/
+13: .agents/
+14: buffer/
+15: Old_simulation/
+16: photo_resource/
 
 # Python
 __pycache__/

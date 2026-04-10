@@ -353,6 +353,22 @@
                 </div>
 
                 <div class="settings-group">
+                    <h3>Time Control (時間機器)</h3>
+                    <div class="setting-row">
+                        <label>Time Scale</label>
+                        <input type="range" id="timeScaleSlider" min="0.05" max="1" step="0.05" value="1">
+                        <span id="timeScaleVal">1.0x</span>
+                    </div>
+                    <div class="setting-row">
+                        <label>Timeline</label>
+                        <input type="range" id="timelineSlider" min="0" max="0" step="1" value="0" disabled>
+                    </div>
+                    <div class="button-row">
+                        <span id="historyInfo" style="font-size: 0.8em; color: #777;">Recording: 0s</span>
+                    </div>
+                </div>
+
+                <div class="settings-group">
                     <h3>Global Physics</h3>
                     <div class="setting-row">
                         <label>Gravity</label>
@@ -446,6 +462,10 @@
         });
 
         const resetDefaultsBtn = document.getElementById('resetDefaultsBtn');
+        const timeScaleSlider = document.getElementById('timeScaleSlider');
+        const timeScaleVal = document.getElementById('timeScaleVal');
+        const timelineSlider = document.getElementById('timelineSlider');
+        const historyInfo = document.getElementById('historyInfo');
 
         const DEFAULTS = {
             speedSlider: 1,
@@ -455,8 +475,62 @@
             kPvc: 3000, dPvc: 60, muPvc: 0.3,
             kWood: 20000, dWood: 300, muWood: 0.4,
             gVal: 5000,
-            fGain: 100
+            fGain: 100,
+            timeScaleSlider: 1
         };
+
+        let timeScale = 1.0;
+        timeScaleSlider.addEventListener('input', () => {
+            timeScale = parseFloat(timeScaleSlider.value);
+            timeScaleVal.textContent = timeScale.toFixed(2) + 'x';
+        });
+
+        const history = [];
+        const MAX_HISTORY = 3000; // 50 seconds at 60fps
+        let isScrubbing = false;
+
+        timelineSlider.addEventListener('input', () => {
+            isScrubbing = true;
+            physics.isPaused = true;
+            pauseToggle.textContent = 'Resume';
+            pauseToggle.style.backgroundColor = '#ffecb3';
+            
+            const index = parseInt(timelineSlider.value);
+            if (history[index]) {
+                applyState(history[index]);
+            }
+        });
+
+        timelineSlider.addEventListener('change', () => {
+            isScrubbing = false;
+        });
+
+        function saveState() {
+            history.push({
+                x: physics.x, y: physics.y, vx: physics.vx, vy: physics.vy,
+                angle: physics.angle, omega: physics.omega,
+                currentAngle: currentAngle,
+                pvcPen: window.maxPvcPenetrationLastFrame || 0,
+                // Also save dynamic COM to avoid jitter
+                lastFinalComX: window.lastFinalComX,
+                lastFinalComY: window.lastFinalComY
+            });
+            if (history.length > MAX_HISTORY) history.shift();
+            
+            timelineSlider.disabled = false;
+            timelineSlider.max = history.length - 1;
+            if (!isScrubbing) timelineSlider.value = history.length - 1;
+            historyInfo.textContent = `History: ${(history.length / 60).toFixed(1)}s`;
+        }
+
+        function applyState(s) {
+            physics.x = s.x; physics.y = s.y;
+            physics.vx = s.vx; physics.vy = s.vy;
+            physics.angle = s.angle; physics.omega = s.omega;
+            currentAngle = s.currentAngle;
+            window.lastFinalComX = s.lastFinalComX;
+            window.lastFinalComY = s.lastFinalComY;
+        }
 
         resetDefaultsBtn.addEventListener('click', () => {
             Object.keys(DEFAULTS).forEach(id => {
@@ -468,6 +542,13 @@
                 }
             });
             prepareRobot();
+            // Reset history
+            history.length = 0;
+            timelineSlider.max = 0;
+            timelineSlider.value = 0;
+            timelineSlider.disabled = true;
+            historyInfo.textContent = 'Recording: 0s';
+            
             // Reset motor state if needed
             motorRunning = true;
             motorBtn.textContent = 'Stop Motor';
@@ -613,7 +694,8 @@
         // Ensure legacy physics is overridden natively
         function animate(time) {
             if (lastTime === null) { lastTime = time; }
-            const deltaTime = Math.min((time - lastTime) / 1000, 0.05); 
+            let deltaTime = Math.min((time - lastTime) / 1000, 0.05); 
+            deltaTime *= timeScale; // Applying slow motion
             lastTime = time;
 
             // Camera/View Constants
@@ -640,7 +722,7 @@
 
             for (let step = 0; step < SUBSTEPS; step++) {
                 if (motorRunning && !physics.isPaused) {
-                    currentAngle += (BASE_SPEED * speedMultiplier * subDT); // Update at sub-step resolution
+                    currentAngle += (BASE_SPEED * speedMultiplier * subDT); 
                     currentAngle = currentAngle % 360;
                 }
                 const radC = currentAngle * Math.PI / 180;
@@ -780,6 +862,7 @@
                 }
 
                 if (step === SUBSTEPS - 1) {
+                    window.maxPvcPenetrationLastFrame = maxPvcPenetration; 
                     const fpad = (n, len) => n.toFixed(1).padStart(len, ' ');
                     const ipad = (n, len) => Math.round(n).toString().padStart(len, ' ');
 
@@ -806,6 +889,10 @@
                         if (bgRect) bgRect.setAttribute('width', (textWidth + 30).toString());
                     }
                 }
+            }
+
+            if (!physics.isPaused && !isScrubbing) {
+                saveState();
             }
 
             // --- Visual SVG Deformation for PVC Spring ---

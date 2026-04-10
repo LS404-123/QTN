@@ -10,44 +10,41 @@
             margin: 0;
             padding: 0;
             display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
+            height: 100vh;
+            width: 100vw;
             background-color: #f0f4f8;
             font-family: sans-serif;
+            overflow: hidden;
         }
 
         .app-container {
             background-color: #ffffff;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            border-radius: 12px;
-            overflow: hidden;
             display: flex;
-            flex-direction: column;
-            width: 800px;
-            max-width: 100%;
+            flex-direction: row;
+            width: 100%;
+            height: 100%;
         }
 
         .canvas-wrapper {
+            flex: 1;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px 0;
+            background-color: #f8f9fa;
+            min-width: 0;
+            overflow: hidden;
         }
 
         svg {
-            max-width: 100%;
-            height: auto;
+            display: block;
         }
 
         .control-panel {
-            background-color: #f8f9fa;
-            border-top: 1px solid #eaeaea;
-            padding: 20px 30px;
+            padding: 15px;
             display: flex;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 20px;
+            flex-direction: column;
+            gap: 12px;
+            border-bottom: 1px solid #eee;
         }
 
         .control-panel label {
@@ -70,6 +67,60 @@
             font-family: monospace;
             font-size: 1.1em;
         }
+
+        .settings-panel {
+            background-color: #f1f3f5;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            font-size: 0.85em;
+        }
+
+        .settings-group {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+
+        .settings-group h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 1em;
+            color: #555;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .setting-row label {
+            width: 100px;
+            font-weight: 500;
+        }
+
+        .button-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 5px;
+        }
+
+        .button-row button {
+            flex: 1;
+            padding: 8px;
+            font-size: 0.9em;
+            cursor: pointer;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            background-color: #e0e0e0;
+        }
     </style>
 </head>
 
@@ -77,7 +128,7 @@
 
     <div class="app-container">
         <div class="canvas-wrapper">
-            <svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+            <svg id="main-svg" style="width:100%; height:100%;" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
 
                 <!-- Definitions for filters and gradients -->
                 <defs>
@@ -101,97 +152,102 @@
                     </linearGradient>
                 </defs>
 
-                <!-- ========================================== -->
-                <!-- ROBOT ASSEMBLY (Robot-Centric POV)         -->
-                <!-- ========================================== -->
-                <g id="robot-wrapper" transform="translate(60, -80)">
-                    <!-- GROUND LINE & SCENERY (Local to Robot) -->
-                    <g id="ground">
-                        <!-- Main horizontal ground line -->
-                        <line id="ground-line" x1="-2000" y1="0" x2="3000" y2="0" stroke="#777777" stroke-width="4"
-                            stroke-linecap="round" />
-                        <!-- Ground hatching container -->
-                        <g id="ground-hatching"></g>
+                <g id="ground">
+                    <!-- Main horizontal ground line -->
+                    <line id="ground-line" x1="-50000" y1="0" x2="50000" y2="0" stroke="#777777" stroke-width="4"
+                        stroke-linecap="round" />
+                    <!-- Ruler tick marks every 100px -->
+                    <g id="ground-ticks" fill="#999" font-size="11" font-family="monospace" text-anchor="middle">
+                        <script>
+                            (() => {
+                                const g = document.getElementById('ground-ticks');
+                                for (let x = -5000; x <= 6000; x += 100) {
+                                    const isMajor = x % 500 === 0;
+                                    const h = isMajor ? 16 : 8;
+                                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                                    line.setAttribute('x1', x); line.setAttribute('y1', 0);
+                                    line.setAttribute('x2', x); line.setAttribute('y2', h);
+                                    line.setAttribute('stroke', isMajor ? '#666' : '#aaa');
+                                    line.setAttribute('stroke-width', isMajor ? 2 : 1);
+                                    g.appendChild(line);
+                                    if (isMajor) {
+                                        const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                                        txt.setAttribute('x', x); txt.setAttribute('y', h + 14);
+                                        txt.setAttribute('fill', '#888');
+                                        txt.textContent = x + 'px';
+                                        g.appendChild(txt);
+                                    }
+                                }
+                            })();
+                        </script>
                     </g>
+                    <!-- Ground hatching container -->
+                    <g id="ground-hatching"></g>
+                </g>
 
-                    <!-- LEFT ASSEMBLY: White/Grey Ring -->
-                    <g id="left-ring">
-                        <!-- Thinner PVC-like ring (Visualized with stroke) -->
-                        <circle id="ring-main" cx="170" cy="285" r="65" fill="none" stroke="url(#ring-gradient)"
-                            stroke-width="8" filter="url(#drop-shadow)" />
-                        <!-- Outer rim detail -->
-                        <circle id="ring-outer" cx="170" cy="285" r="69" fill="none" stroke="#cccccc"
-                            stroke-width="1" />
-                        <!-- Inner rim detail -->
-                        <circle id="ring-inner" cx="170" cy="285" r="61" fill="none" stroke="#cfcfcf"
-                            stroke-width="1" />
-                    </g>
+                <!-- ROBOT ASSEMBLY -->
+                <g id="robot-wrapper">
+                    <!-- geometry group -->
+                    <g id="robot-geometry">
+                        <!-- LEFT ASSEMBLY: White/Grey Ring -->
+                        <g id="left-ring">
+                            <circle id="ring-main" cx="170" cy="285" r="65" fill="none" stroke="url(#ring-gradient)"
+                                stroke-width="8" filter="url(#drop-shadow)" />
+                            <circle id="ring-outer" cx="170" cy="285" r="69" fill="none" stroke="#cccccc"
+                                stroke-width="1" />
+                            <circle id="ring-inner" cx="170" cy="285" r="61" fill="none" stroke="#cfcfcf"
+                                stroke-width="1" />
+                        </g>
 
-                    <!-- MAIN BODY: Yellow Horizontal Board -->
-                    <g id="main-body" filter="url(#drop-shadow)">
-                        <rect x="60" y="200" width="50" height="15" fill="url(#wood-gradient)" rx="5" />
-                        <rect x="90" y="200" width="610" height="15" fill="url(#board-gradient)" />
-                        <rect x="90" y="215" width="610" height="5" fill="#f5b000" />
-                    </g>
+                        <!-- MAIN BODY: Yellow Horizontal Board -->
+                        <g id="main-body" filter="url(#drop-shadow)">
+                            <rect x="60" y="200" width="50" height="15" fill="url(#wood-gradient)" rx="5" />
+                            <rect x="90" y="200" width="610" height="15" fill="url(#board-gradient)" />
+                            <rect x="90" y="215" width="610" height="5" fill="#f5b000" />
+                        </g>
 
-                    <!-- BATTERY BOX (At the back of the yellow body) -->
-                    <g id="battery-box" filter="url(#drop-shadow)">
-                        <!-- Main black body -->
-                        <rect x="610" y="150" width="80" height="50" fill="#222222" rx="6" />
-                        <!-- Detail -->
-                        <rect x="615" y="160" width="70" height="30" fill="none" stroke="#444444" stroke-width="2"
-                            rx="3" />
-                    </g>
+                        <!-- BATTERY BOX (At the back of the yellow body) -->
+                        <g id="battery-box" filter="url(#drop-shadow)">
+                            <rect x="610" y="150" width="80" height="50" fill="#222222" rx="6" />
+                            <rect x="615" y="160" width="70" height="30" fill="none" stroke="#444444" stroke-width="2"
+                                rx="3" />
+                        </g>
 
-                    <!-- MIDDLE ASSEMBLY: Suspended Crane Mechanism -->
-                    <g id="crane-assembly">
-                        <!-- Bracket attached to the TOP of the yellow board -->
-                        <rect x="390" y="175" width="20" height="25" fill="#999999" rx="3" />
-                        <rect x="392" y="175" width="16" height="25" fill="#a8a8a8" rx="2" />
-
-                        <!-- Crane Arm Group -->
-                        <g transform="translate(400, 185)">
-                            <!-- Spin group controlled by Javascript now to allow smooth speed changes -->
-                            <g id="crane-spin-group">
-                                <!-- Blue Arm -->
-                                <rect x="-10" y="-10" width="20" height="70" fill="#5fcaf0" rx="8"
-                                    filter="url(#drop-shadow)" />
-                                <rect x="-8" y="-8" width="16" height="66" fill="none" stroke="#a0e4fa" stroke-width="1"
-                                    rx="6" />
-
-                                <!-- Top Pivot Bolt -->
-                                <circle cx="0" cy="0" r="5" fill="#e0e0e0" stroke="#666666" stroke-width="1.5" />
-                                <circle cx="0" cy="0" r="2" fill="#444444" />
-
-                                <!-- Suspended Wooden Diamond -->
-                                <g filter="url(#drop-shadow)">
-                                    <rect x="0" y="50" width="60" height="60" fill="url(#wood-gradient)"
-                                        stroke="#cba371" stroke-width="2" transform="rotate(45, 0, 50)" />
+                        <!-- MIDDLE ASSEMBLY: Suspended Crane Mechanism -->
+                        <g id="crane-assembly">
+                            <rect x="390" y="175" width="20" height="25" fill="#999999" rx="3" />
+                            <rect x="392" y="175" width="16" height="25" fill="#a8a8a8" rx="2" />
+                            <g transform="translate(400, 185)">
+                                <g id="crane-spin-group">
+                                    <rect x="-10" y="-10" width="20" height="70" fill="#5fcaf0" rx="8"
+                                        filter="url(#drop-shadow)" />
+                                    <rect x="-8" y="-8" width="16" height="66" fill="none" stroke="#a0e4fa"
+                                        stroke-width="1" rx="6" />
+                                    <circle cx="0" cy="0" r="5" fill="#e0e0e0" stroke="#666666" stroke-width="1.5" />
+                                    <circle cx="0" cy="0" r="2" fill="#444444" />
+                                    <g filter="url(#drop-shadow)">
+                                        <rect x="0" y="50" width="60" height="60" fill="url(#wood-gradient)"
+                                            stroke="#cba371" stroke-width="2" transform="rotate(45, 0, 50)" />
+                                    </g>
                                 </g>
                             </g>
                         </g>
-                    </g>
 
-                    <!-- RIGHT ASSEMBLY: Wooden Walking Leg Structure -->
-                    <g id="right-leg-assembly" filter="url(#drop-shadow)">
-                        <!-- Vertical Thigh Block -->
-                        <rect x="635" y="215" width="65" height="215" fill="url(#wood-gradient)" rx="1" />
-                        <line x1="635" y1="215" x2="635" y2="430" stroke="#dcb98a" stroke-width="1" />
-                        <line x1="700" y1="215" x2="700" y2="430" stroke="#dcb98a" stroke-width="1" />
-                        <line x1="635" y1="430" x2="700" y2="430" stroke="#dcb98a" stroke-width="1" />
-
-                        <!-- Front Leg/Calf Piece -->
-                        <!-- Attached exactly at the bottom-right corner of the thigh block (700, 430) -->
-                        <!-- Local rotation matches absolute body tilt to make piece perpendicular to ground -->
-                        <g transform="translate(700, 430) rotate(30.17)">
-                            <rect x="-65" y="0" width="65" height="220" fill="url(#wood-gradient)" rx="1" />
-                            <line x1="-65" y1="0" x2="-65" y2="220" stroke="#dcb98a" stroke-width="1" />
-                            <line x1="0" y1="0" x2="0" y2="220" stroke="#dcb98a" stroke-width="1" />
-                            <line x1="-65" y1="0" x2="0" y2="0" stroke="#cba371" stroke-width="1.5" />
-                            <line x1="-65" y1="220" x2="0" y2="220" stroke="#dcb98a" stroke-width="1" />
+                        <!-- RIGHT ASSEMBLY: Wooden Walking Leg Structure -->
+                        <g id="right-leg-assembly" filter="url(#drop-shadow)">
+                            <rect x="635" y="215" width="65" height="215" fill="url(#wood-gradient)" rx="1" />
+                            <line x1="635" y1="215" x2="635" y2="430" stroke="#dcb98a" stroke-width="1" />
+                            <line x1="700" y1="215" x2="700" y2="430" stroke="#dcb98a" stroke-width="1" />
+                            <line x1="635" y1="430" x2="700" y2="430" stroke="#dcb98a" stroke-width="1" />
+                            <g transform="translate(700, 430) rotate(30.17)">
+                                <rect x="-65" y="0" width="65" height="220" fill="url(#wood-gradient)" rx="1" />
+                                <line x1="-65" y1="0" x2="-65" y2="220" stroke="#dcb98a" stroke-width="1" />
+                                <line x1="0" y1="0" x2="0" y2="220" stroke="#dcb98a" stroke-width="1" />
+                                <line x1="-65" y1="0" x2="0" y2="0" stroke="#cba371" stroke-width="1.5" />
+                                <line x1="-65" y1="220" x2="0" y2="220" stroke="#dcb98a" stroke-width="1" />
+                            </g>
                         </g>
                     </g>
-
                     <!-- CENTER OF MASS MARKER -->
                     <g id="com-marker">
                         <circle cx="0" cy="0" r="12" fill="none" stroke="#e91e63" stroke-width="2" />
@@ -209,24 +265,104 @@
                     <text x="400" y="300" fill="#cc0000" font-size="24" font-family="sans-serif" font-weight="bold"
                         text-anchor="middle">幾何約束衝突！機器人已穿入地面。</text>
                 </g>
+
+                <!-- Debug Indicator -->
+                <g id="debug-indicator-group" transform="translate(10, 30)">
+                    <rect x="0" y="-20" width="900" height="40" fill="rgba(255,255,255,0.9)" rx="4"
+                        filter="url(#drop-shadow)" />
+                    <text id="debug-indicator" x="10" y="0" fill="#222" font-size="14" font-family="monospace">PVC Pen:
+                        0.0px</text>
+                </g>
             </svg>
         </div>
 
-        <!-- Control Panel -->
-        <div class="control-panel">
-            <label for="speedSlider">Crane Speed:</label>
-            <input type="range" id="speedSlider" min="0.2" max="5" step="0.2" value="1">
-            <div class="speed-value" id="speedDisplay">1.0x</div>
+        <div class="sidebar">
+            <div class="control-panel">
+                <div class="setting-row">
+                    <label>Crane Speed</label>
+                    <input type="range" id="speedSlider" min="0.2" max="5" step="0.2" value="1">
+                    <span id="speedDisplay">1.0x</span>
+                </div>
+                <div class="setting-row">
+                    <label>Ring X</label>
+                    <input type="range" id="ringXSlider" min="100" max="260" step="1" value="150">
+                    <span id="ringXDisplay">150</span>
+                </div>
+                <div class="setting-row">
+                    <label>Drop Tilt</label>
+                    <input type="range" id="tiltSlider" min="-45" max="45" step="1" value="0">
+                    <span id="tiltDisplay">0°</span>
+                </div>
+                <div class="setting-row">
+                    <label>POV Mode</label>
+                    <select id="povSelect" style="flex:1">
+                        <option value="world">World centric</option>
+                        <option value="robot">Robot centric</option>
+                    </select>
+                </div>
+                <div class="button-row">
+                    <button id="motorToggle">Stop Motor</button>
+                    <button id="resetBtn">Prepare Space</button>
+                </div>
+                <div class="button-row" style="gap: 5px;">
+                    <button id="quickDropBtn" style="background-color: #81c784; color: white; border: none; font-weight: bold; flex: 2;">Quick Drop (一鍵投放)</button>
+                    <button id="pauseToggle" style="flex: 1;">Hold</button>
+                </div>
+            </div>
 
-            <label for="ringXSlider">Ring position (X):</label>
-            <input type="range" id="ringXSlider" min="100" max="260" step="1" value="150">
-            <div class="speed-value" id="ringXDisplay">150</div>
+            <div class="settings-panel">
+                <div class="settings-group">
+                    <h3>PVC (Front Ring)</h3>
+                    <div class="setting-row">
+                        <label>Stiffness (K)</label>
+                        <input type="range" id="kPvc" min="500" max="10000" step="100" value="3000">
+                        <span id="kPvcVal">3000</span>
+                    </div>
+                    <div class="setting-row">
+                        <label>Damping (D)</label>
+                        <input type="range" id="dPvc" min="0" max="200" step="5" value="60">
+                        <span id="dPvcVal">60</span>
+                    </div>
+                    <div class="setting-row">
+                        <label>Friction (μ)</label>
+                        <input type="range" id="muPvc" min="0" max="1" step="0.05" value="0.3">
+                        <span id="muPvcVal">0.3</span>
+                    </div>
+                </div>
 
-            <label for="povSelect">POV Mode:</label>
-            <select id="povSelect">
-                <option value="world">World centric</option>
-                <option value="robot">Robot centric</option>
-            </select>
+                <div class="settings-group">
+                    <h3>WOOD (Back Leg)</h3>
+                    <div class="setting-row">
+                        <label>Stiffness (K)</label>
+                        <input type="range" id="kWood" min="5000" max="50000" step="1000" value="20000">
+                        <span id="kWoodVal">20000</span>
+                    </div>
+                    <div class="setting-row">
+                        <label>Damping (D)</label>
+                        <input type="range" id="dWood" min="0" max="1000" step="10" value="300">
+                        <span id="dWoodVal">300</span>
+                    </div>
+                    <div class="setting-row">
+                        <label>Friction (μ)</label>
+                        <input type="range" id="muWood" min="0" max="1" step="0.05" value="0.4">
+                        <span id="muWoodVal">0.4</span>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Global Physics</h3>
+                    <div class="setting-row">
+                        <label>Gravity</label>
+                        <input type="range" id="gVal" min="0" max="15000" step="500" value="5000">
+                        <span id="gDisplay">5000</span>
+                    </div>
+                    <div class="setting-row" style="flex:1">
+                        <label>Friction Gain</label>
+                        <input type="range" id="fGain" min="1" max="2000" step="1" value="100">
+                        <span id="fGainVal">100</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -235,33 +371,120 @@
         const display = document.getElementById('speedDisplay');
         const ringXSlider = document.getElementById('ringXSlider');
         const ringXDisplay = document.getElementById('ringXDisplay');
+        const tiltSlider = document.getElementById('tiltSlider');
+        const tiltDisplay = document.getElementById('tiltDisplay');
         const povSelect = document.getElementById('povSelect');
         const craneGroup = document.getElementById('crane-spin-group');
         const robotWrapper = document.getElementById('robot-wrapper');
+        const robotGeometry = document.getElementById('robot-geometry');
+        const motorBtn = document.getElementById('motorToggle');
+        const resetBtn = document.getElementById('resetBtn');
+        const quickDropBtn = document.getElementById('quickDropBtn');
+        const pauseToggle = document.getElementById('pauseToggle');
+        const debugIndicator = document.getElementById('debug-indicator');
+        const mainSvg = document.getElementById('main-svg');
+        const leftRingGroup = document.getElementById('left-ring');
 
-        // Base speed increased by a factor of 5 (450 degrees per second instead of 90)
-        const BASE_SPEED = 450;
+        window.lastFinalComX = 400;
+        window.lastFinalComY = 300;
 
+        const BASE_SPEED = 1000;
         let currentAngle = 0;
         let lastTime = null;
         let speedMultiplier = parseFloat(slider.value);
+        let motorRunning = true;
 
-        // --- CENTER OF MASS CALCULATIONS WITH DENSITY ---
+        motorBtn.addEventListener('click', () => {
+            motorRunning = !motorRunning;
+            motorBtn.textContent = motorRunning ? 'Stop Motor' : 'Start Motor';
+            motorBtn.style.backgroundColor = motorRunning ? '#e0e0e0' : '#ffcdd2';
+        });
+
+        function prepareRobot() {
+            physics.angle = parseFloat(tiltSlider.value) * Math.PI / 180;
+            physics.x = 400;
+            physics.y = 50;
+            physics.vx = 0;
+            physics.vy = 0;
+            physics.omega = 0;
+            physics.isPaused = true;
+        }
+
+        resetBtn.addEventListener('click', prepareRobot);
+
+        quickDropBtn.addEventListener('click', () => {
+            prepareRobot();
+            physics.isPaused = false;
+        });
+
+        pauseToggle.addEventListener('click', () => {
+            physics.isPaused = !physics.isPaused;
+            pauseToggle.textContent = physics.isPaused ? 'Resume' : 'Hold';
+        });
+
+        // [Part 3] Full 2D Rigid Body Physics State
+        const physics = {
+            isPaused: true,
+            x: 400, // COM horizontal position (world space)
+            y: 50, // COM altitude 
+            angle: parseFloat(tiltSlider.value) * Math.PI / 180, // radians
+            vx: 0,
+            vy: 0,
+            omega: 0,
+            mass: 1,
+            inertia: 20000,
+            gravity: 5000
+        };
+
+        slider.addEventListener('input', (e) => {
+            speedMultiplier = parseFloat(e.target.value);
+            display.textContent = speedMultiplier.toFixed(1) + 'x';
+        });
+
+        // Physics Tuning UI
+        const settings = {
+            kPvc: document.getElementById('kPvc'),
+            dPvc: document.getElementById('dPvc'),
+            muPvc: document.getElementById('muPvc'),
+            kWood: document.getElementById('kWood'),
+            dWood: document.getElementById('dWood'),
+            muWood: document.getElementById('muWood'),
+            gravity: document.getElementById('gVal'),
+            fGain: document.getElementById('fGain')
+        };
+
+        Object.keys(settings).forEach(id => {
+            const el = settings[id];
+            const displayEl = document.getElementById(id + 'Val') || document.getElementById('gDisplay');
+            el.addEventListener('input', () => {
+                if (displayEl) displayEl.textContent = el.value;
+            });
+        });
+
+        tiltSlider.addEventListener('input', (e) => {
+            const deg = parseFloat(e.target.value);
+            tiltDisplay.textContent = deg + '°';
+            physics.angle = deg * Math.PI / 180;
+            // When adjusting slider, hold robot in air to view the change
+            physics.x = 400;
+            physics.y = 50;
+            physics.vx = 0;
+            physics.vy = 0;
+            physics.omega = 0;
+            physics.isPaused = true;
+        });
+
         const comMarker = document.getElementById('com-marker');
-
-        // Relative densities assigned to different materials
         const DENSITY_WOOD = 0.6;
         const DENSITY_PVC = 1.3;
         const DENSITY_METAL = 5.0;
         const DENSITY_BATTERY = 4.0;
 
-        // --- RING PROPERTIES ---
         let RING_CX = parseFloat(ringXSlider.value);
         const RING_CY = 285;
         const RING_R_OUTER = 69;
         const RING_R_INNER = 61;
 
-        // Initialize Ring SVG based on variables
         function initRingSVG() {
             const main = document.getElementById('ring-main');
             const outer = document.getElementById('ring-outer');
@@ -280,251 +503,263 @@
         }
         initRingSVG();
 
-        // 1. Static parts calculation
         const staticParts = [
             { name: "Ring", area: Math.PI * (RING_R_OUTER * RING_R_OUTER - RING_R_INNER * RING_R_INNER), density: DENSITY_PVC, cx: RING_CX, cy: RING_CY },
             { name: "Main Board", area: 610 * 20, density: DENSITY_WOOD, cx: 395, cy: 210 },
             { name: "Left Tip", area: 50 * 15, density: DENSITY_WOOD, cx: 85, cy: 207.5 },
             { name: "Right Thigh", area: 65 * 215, density: DENSITY_WOOD, cx: 667.5, cy: 322.5 },
             { name: "Battery Box", area: 80 * 50, density: DENSITY_BATTERY, cx: 650, cy: 175 },
-            // Right calf transformed by translate(700, 430) rotate(31.24)
             { name: "Right Calf", area: 65 * 220, density: DENSITY_WOOD, cx: 615.16, cy: 507.20 },
             { name: "Crane Bracket", area: 900, density: DENSITY_METAL, cx: 400, cy: 187.5 }
         ];
 
         let totalStaticMass = 0, staticCxSum = 0, staticCySum = 0;
         staticParts.forEach(p => {
-            let mass = p.area * p.density; // Mass = Area * Density
+            let mass = p.area * p.density;
             totalStaticMass += mass;
             staticCxSum += p.cx * mass;
             staticCySum += p.cy * mass;
-        });
-
-        // 2. Dynamic Parts definitions (relative to crane pivot 400, 185)
-        const armArea = 20 * 70;
-        const armMass = armArea * DENSITY_METAL; // Metal arm
-        const armLocalCy = 25;     // Local center of arm
-
-        const diaArea = 60 * 60;
-        const diaMass = diaArea * DENSITY_WOOD; // Wooden diamond
-        const diaLocalCy = 92.426; // Local center of rotated diamond
-
-        const cranePivotX = 400;
-        const cranePivotY = 185;
-
-        // Update variables immediately when slider moves
-        slider.addEventListener('input', (e) => {
-            speedMultiplier = parseFloat(e.target.value);
-            display.textContent = speedMultiplier.toFixed(1) + 'x';
         });
 
         ringXSlider.addEventListener('input', (e) => {
             RING_CX = parseFloat(e.target.value);
             ringXDisplay.textContent = Math.round(RING_CX);
 
-            // Re-calculate static mass centers if ring moves
             staticParts[0].cx = RING_CX;
             totalStaticMass = 0;
             staticCxSum = 0;
             staticCySum = 0;
             staticParts.forEach(p => {
-                let mass = p.area * p.density;
-                totalStaticMass += mass;
-                staticCxSum += p.cx * mass;
-                staticCySum += p.cy * mass;
+                let m = p.area * p.density;
+                totalStaticMass += m;
+                staticCxSum += p.cx * m;
+                staticCySum += p.cy * m;
             });
-
-            // Update visuals
             initRingSVG();
         });
 
-        // --- GROUND CALCULATION LOGIC ---
-        function updateGround(ring, points) {
-            const candidates = [];
+        const armArea = 20 * 70;
+        const armMass = armArea * DENSITY_METAL;
+        const armLocalCy = 25;
 
-            // 1. Tangents from each point to the circle
-            points.forEach(p => {
-                const dx = p.x - ring.cx;
-                const dy = p.y - ring.cy;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist <= ring.r) return;
+        const diaArea = 60 * 60;
+        const diaMass = diaArea * DENSITY_WOOD;
+        const diaLocalCy = 92.426;
 
-                const alpha = Math.atan2(dy, dx);
-                const beta = Math.acos(ring.r / dist);
+        const cranePivotX = 400;
+        const cranePivotY = 185;
 
-                // We want the tangent where the circle is "above" the line (ry <= m*rx + c)
-                [alpha + beta, alpha - beta].forEach(angle => {
-                    const tx = ring.cx + ring.r * Math.cos(angle);
-                    const ty = ring.cy + ring.r * Math.sin(angle);
-                    const dx_line = tx - p.x;
-                    if (Math.abs(dx_line) < 0.001) return;
-                    const m = (ty - p.y) / dx_line;
-                    const c = p.y - m * p.x;
-                    candidates.push({ m, c, p1: { x: tx, y: ty }, p2: p });
-                });
-            });
+        // --- Pre-calculated Back Leg Joint Pos (relative to world at start) ---
+        const legAngle = 30.17 * Math.PI / 180;
+        const cosL = Math.cos(legAngle);
+        const sinL = Math.sin(legAngle);
+        const brX = 700 + (0 * cosL - 220 * sinL);
+        const brY = 430 + (0 * sinL + 220 * cosL);
+        const blX = 700 + (-65 * cosL - 220 * sinL);
+        const blY = 430 + (-65 * sinL + 220 * cosL);
 
-            // 2. Filter valid lines (all parts are "above" the line)
-            // Note: SVG Y is down, so "above" means y <= mx + c
-            const validLines = candidates.filter(line => {
-                // Check if circle center is above
-                if (ring.cy > line.m * ring.cx + line.c + 0.1) return false;
-                // Check distance to ring center >= r
-                const dist = Math.abs(line.m * ring.cx - ring.cy + line.c) / Math.sqrt(line.m * line.m + 1);
-                if (dist < ring.r - 0.1) return false;
-                // Check all points are above
-                return points.every(p => p.y <= line.m * p.x + line.c + 0.1);
-            });
-
-            if (validLines.length === 0) return;
-
-            // 4. Pick the "lowest" valid ground (the one with the largest y-value at x=400)
-            validLines.sort((a, b) => (b.m * 400 + b.c) - (a.m * 400 + a.c));
-            const ground = validLines[0];
-
-            // 5. Robot-wide collision check
-            // Check key structural points against the chosen ground line
-            // Points are in robot-wrapper local coordinates
-            const checkPoints = [
-                { x: 60, y: 200 }, { x: 700, y: 200 }, { x: 700, y: 215 }, { x: 60, y: 215 }, // Main Board
-                { x: 610, y: 150 }, { x: 690, y: 150 }, // Battery Box Top
-                { x: 635, y: 215 }, { x: 635, y: 430 }  // Thigh
-            ];
-
-            const isColliding = checkPoints.some(p => p.y > ground.m * p.x + ground.c + 0.5);
-            document.getElementById('error-overlay').style.display = isColliding ? 'block' : 'none';
-
-            // 6. Update SVG
-            const gLine = document.getElementById('ground-line');
-            const gHatch = document.getElementById('ground-hatching');
-
-            const xStart = -2000, xEnd = 3000;
-            const yStart = ground.m * xStart + ground.c;
-            const yEnd = ground.m * xEnd + ground.c;
-
-            gLine.setAttribute('x1', xStart);
-            gLine.setAttribute('y1', yStart);
-            gLine.setAttribute('x2', xEnd);
-            gLine.setAttribute('y2', yEnd);
-
-            // Hatching removed for "simple straight line" as requested
-            gHatch.innerHTML = '';
-
-            return ground;
-        }
-
-        // Use requestAnimationFrame for smooth speed transitions without resetting
+        // Ensure legacy physics is overridden natively
         function animate(time) {
-            if (lastTime === null) {
-                lastTime = time;
-            }
-
-            // Calculate delta time in seconds
-            const deltaTime = (time - lastTime) / 1000;
+            if (lastTime === null) { lastTime = time; }
+            const deltaTime = Math.min((time - lastTime) / 1000, 0.05); 
             lastTime = time;
 
-            // Increase angle continuously 
-            currentAngle += BASE_SPEED * speedMultiplier * deltaTime;
+            // Camera/View Constants
+            const svgW = mainSvg.clientWidth;
+            const svgH = mainSvg.clientHeight;
+            const virtualH = 900;
+            const virtualW = virtualH * (svgW / svgH);
+            const GROUND_Y = 800; // Shared ground Y
+            const SCREEN_CENTER_X = virtualW / 2;
 
-            // Keep angle within 0-360 range to prevent extremely large float values over time
-            currentAngle = currentAngle % 360;
+            // --- Rigid Body Spring-Damper Physics ---
+            const MAT = {
+                'PVC': { K: parseFloat(settings.kPvc.value), D: parseFloat(settings.dPvc.value), mu: parseFloat(settings.muPvc.value) },
+                'WOOD': { K: parseFloat(settings.kWood.value), D: parseFloat(settings.dWood.value), mu: parseFloat(settings.muWood.value) }
+            };
+            physics.gravity = parseFloat(settings.gravity.value);
+            const frictionGain = parseFloat(settings.fGain.value);
 
-            // Apply rotation to the crane group
-            craneGroup.setAttribute('transform', `rotate(${currentAngle}, 0, 0)`);
+            const SUBSTEPS = 15;
+            const subDT = deltaTime / SUBSTEPS;
+            let maxPvcPenetration = 0;
+            let maxPtVx = 0;
 
-            // --- Update COM Marker Position ---
-            const rad = currentAngle * Math.PI / 180;
-            const cosA = Math.cos(rad);
-            const sinA = Math.sin(rad);
+            for (let step = 0; step < SUBSTEPS; step++) {
+                if (motorRunning) {
+                    currentAngle += (BASE_SPEED * speedMultiplier * subDT); // Update at sub-step resolution
+                    currentAngle = currentAngle % 360;
+                }
+                const radC = currentAngle * Math.PI / 180;
+                const cosA = Math.cos(radC), sinA = Math.sin(radC);
 
-            // Calculate global positions of dynamic parts relative to robot-wrapper
-            const armGlobalX = cranePivotX - armLocalCy * sinA;
-            const armGlobalY = cranePivotY + armLocalCy * cosA;
-            const diaGlobalX = cranePivotX - diaLocalCy * sinA;
-            const diaGlobalY = cranePivotY + diaLocalCy * cosA;
+                // Sub-step COM update
+                const armGlobalX = cranePivotX - armLocalCy * sinA;
+                const armGlobalY = cranePivotY + armLocalCy * cosA;
+                const diaGlobalX = cranePivotX - diaLocalCy * sinA;
+                const diaGlobalY = cranePivotY + diaLocalCy * cosA;
 
-            // Weighted Average combining static mass and dynamically moving mass
-            const totalMass = totalStaticMass + armMass + diaMass;
-            const finalComX = (staticCxSum + armGlobalX * armMass + diaGlobalX * diaMass) / totalMass;
-            const finalComY = (staticCySum + armGlobalY * armMass + diaGlobalY * diaMass) / totalMass;
+                const totalMass = totalStaticMass + armMass + diaMass;
+                const finalComX = (staticCxSum + armGlobalX * armMass + diaGlobalX * diaMass) / totalMass;
+                const finalComY = (staticCySum + armGlobalY * armMass + diaGlobalY * diaMass) / totalMass;
 
-            // Apply translation to the marker
-            comMarker.setAttribute('transform', `translate(${finalComX.toFixed(2)}, ${finalComY.toFixed(2)})`);
+                // Shapes relative to CURRENT sub-step COM
+                const shapes = [
+                    { type: 'PVC', shape: 'circle', cx: RING_CX - finalComX, cy: RING_CY - finalComY, r: RING_R_OUTER },
+                    { type: 'WOOD', shape: 'point', dx: brX - finalComX, dy: brY - finalComY },
+                    { type: 'WOOD', shape: 'point', dx: blX - finalComX, dy: blY - finalComY }
+                ];
 
-            // --- Update Ground Line ---
-            // Calculate Calf Corners in Robot-Wrapper space
-            const legAngle = 30.17 * Math.PI / 180;
-            const cosL = Math.cos(legAngle);
-            const sinL = Math.sin(legAngle);
-            // Local corners: BR(0, 220), BL(-65, 220) relative to (700, 430)
-            const brX = 700 + (0 * cosL - 220 * sinL);
-            const brY = 430 + (0 * sinL + 220 * cosL);
-            const blX = 700 + (-65 * cosL - 220 * sinL);
-            const blY = 430 + (-65 * sinL + 220 * cosL);
+                let totalFx = 0; // Horizontal forces
+                let totalFy = physics.mass * physics.gravity; // Gravity Down
+                let totalTorque = 0;
+                const cR = Math.cos(physics.angle), sR = Math.sin(physics.angle);
 
-            const ground = updateGround(
-                { cx: RING_CX, cy: RING_CY, r: RING_R_OUTER },
-                [
-                    { x: brX, y: brY },
-                    { x: blX, y: blY }
-                ]
-            );
+                shapes.forEach(sh => {
+                    if (sh.shape === 'point') {
+                        const wx = cR * sh.dx - sR * sh.dy;
+                        const wy = sR * sh.dx + cR * sh.dy;
+                        const worldY = physics.y + wy;
+                        if (worldY > GROUND_Y) {
+                            const penetration = worldY - GROUND_Y;
+                            const ptVy = physics.vy + physics.omega * wx;
+                            const forceY = -MAT[sh.type].K * penetration - MAT[sh.type].D * ptVy;
+                            if (forceY < 0) {
+                                totalFy += forceY;
+                                totalTorque += wx * forceY;
+                                // --- Friction ---
+                                const ptVx = physics.vx - physics.omega * wy;
+                                const maxFriction = MAT[sh.type].mu * Math.abs(forceY);
+                                const frictionX = Math.abs(ptVx) < 2 ? 0 :
+                                    -Math.sign(ptVx) * Math.min(maxFriction, Math.abs(ptVx) * frictionGain);
+                                totalFx += frictionX;
+                                totalTorque += -wy * frictionX;
+                            }
+                        }
+                    } else if (sh.shape === 'circle') {
+                        const wx = cR * sh.cx - sR * sh.cy;
+                        const wy = sR * sh.cx + cR * sh.cy;
+                        const worldY = physics.y + wy + sh.r;
+                        if (worldY > GROUND_Y) {
+                            const penetration = worldY - GROUND_Y;
+                            maxPvcPenetration = Math.max(maxPvcPenetration, penetration);
+                            const ptVy = physics.vy + physics.omega * wx;
+                            const forceY = -MAT[sh.type].K * penetration - MAT[sh.type].D * ptVy;
+                            if (forceY < 0) {
+                                totalFy += forceY;
+                                totalTorque += wx * forceY;
+                                // --- Friction ---
+                                const ptVx = physics.vx - physics.omega * (wy + sh.r);
+                                const maxFriction = MAT[sh.type].mu * Math.abs(forceY);
+                                const frictionX = Math.abs(ptVx) < 2 ? 0 :
+                                    -Math.sign(ptVx) * Math.min(maxFriction, Math.abs(ptVx) * frictionGain);
+                                totalFx += frictionX;
+                                if (Math.abs(ptVx) > maxPtVx) maxPtVx = Math.abs(ptVx);
+                                totalTorque += -(wy + (sh.r || 0)) * frictionX;
+                            }
+                        }
+                    }
+                });
 
-            // --- Apply POV Transformations ---
-            const pov = povSelect.value;
-            if (pov === 'robot') {
-                // Fixed robot, moving ground (already handled inside updateGround if ground group is local)
-                // Ensure robot-wrapper is in its "neutral" position
-                robotWrapper.setAttribute('transform', 'translate(60, -80)');
-            } else {
-                // Fixed ground, moving robot
-                // 1. Calculate tilt angle
-                const tilt = -Math.atan(ground.m);
-                const tiltDeg = tilt * 180 / Math.PI;
+                // Integrate if not paused
+                if (!physics.isPaused) {
+                    // Angular damping (air resistance to spin)
+                    const angularDamping = -0.5 * physics.omega;
+                    totalTorque += angularDamping * physics.inertia;
 
-                // 2. We want the ground line in screen space to be at y=475 
-                // In world POV, the 'ground' group should NOT be transformed by updateGround 
-                // OR we move the ground group back to top-level. 
-                // For simplicity, let's keep it local but counter-transform if in world mode.
+                    physics.vx += (totalFx / physics.mass) * subDT;
+                    physics.vy += (totalFy / physics.mass) * subDT;
+                    physics.omega += (totalTorque / physics.inertia) * subDT;
+                    // Clamp small residual velocities to zero
+                    if (Math.abs(physics.vx) < 2 && Math.abs(totalFx) < 1) physics.vx = 0;
+                    if (Math.abs(physics.omega) < 0.01) physics.omega = 0;
+                    physics.x += physics.vx * subDT;
+                    physics.y += physics.vy * subDT;
+                    physics.angle += physics.omega * subDT;
+                }
 
-                // Target horizontal ground at y_screen = 475
-                const targetScreenY = 475;
-                const cosT = Math.cos(tilt);
+                if (step === SUBSTEPS - 1) {
+                    const fpad = (n, len) => n.toFixed(1).padStart(len, ' ');
+                    const ipad = (n, len) => Math.round(n).toString().padStart(len, ' ');
 
-                // The ground equation in robot space is y = mx + c.
-                // After rotate(tilt) and translate(tx, ty), a point (x, y) becomes:
-                // x' = tx + x*cosT - y*sinT
-                // y' = ty + x*sinT + y*cosT
-                // We want y' = targetScreenY for any point on the ground line (y = mx + c).
-                // ty + x*sinT + (mx + c)*cosT = targetScreenY
-                // ty + x*(sinT + m*cosT) + c*cosT = targetScreenY
-                // Since sinT + m*cosT = sinT + (tan(-tilt))*cosT = sinT - sinT = 0,
-                // ty = targetScreenY - c*cosT.
+                    // Final visual markers update
+                    comMarker.setAttribute('transform', `translate(${finalComX.toFixed(2)}, ${finalComY.toFixed(2)})`);
+                    craneGroup.setAttribute('transform', `rotate(${currentAngle}, 0, 0)`);
+                    window.lastFinalComX = finalComX;
+                    window.lastFinalComY = finalComY;
+                    
+                    const degBodyDisplay = fpad(physics.angle * 180 / Math.PI, 6);
+                    const omegaDisplay = fpad(physics.omega * 180 / Math.PI, 6);
+                    const vxDisplay = fpad(physics.vx, 7);
+                    const vyDisplay = fpad(physics.vy, 7);
+                    const penDisplay = fpad(maxPvcPenetration, 5);
+                    const ptVxDisplay = fpad(maxPtVx, 6);
+                    const distDisplay = ipad(physics.x - 400, 6);
 
-                const ty = targetScreenY - ground.c * cosT;
-
-                // 3. Centering: We want the robot's center (x ≈ 380) to be at screen x = 400
-                // x_screen = tx + x_local*cosT - y_local*sinT
-                // tx = 400 - (380*cosT - 200*Math.sin(tilt))
-                const tx = 400 - (380 * cosT - 200 * Math.sin(tilt));
-
-                robotWrapper.setAttribute('transform', `translate(${tx}, ${ty}) rotate(${tiltDeg}, 0, 0)`);
-
-                // Force ground line to be horizontal in screen space if needed, 
-                // but ty calculation already handles alignment.
+                    const telemetryText = `PVC Pen: ${penDisplay}px | Max ptVx: ${ptVxDisplay}px/s | Vx: ${vxDisplay} | Vy: ${vyDisplay} | ω: ${omegaDisplay}°/s | Angle: ${degBodyDisplay}° | Dist X: ${distDisplay}px`;
+                    
+                    if (debugIndicator.textContent !== telemetryText) {
+                        debugIndicator.textContent = telemetryText;
+                        const textWidth = debugIndicator.getComputedTextLength();
+                        const bgRect = document.querySelector('#debug-indicator-group rect');
+                        if (bgRect) bgRect.setAttribute('width', (textWidth + 30).toString());
+                    }
+                }
             }
 
-            // Request next frame
+            // --- Visual SVG Deformation for PVC Spring ---
+            // If the spring pushes into the floor computationally, we squash the SVG proportionally
+            // squashed relative to the true Global Y axis, not local Y.
+            const rOuter = RING_R_OUTER;
+            const degBody = physics.angle * 180 / Math.PI;
+            const scaleY = Math.max(0.4, (rOuter - maxPvcPenetration) / rOuter);
+            const scaleX = 1 / Math.sqrt(scaleY);
+
+            leftRingGroup.setAttribute('transform', `
+                translate(${RING_CX}, ${RING_CY})
+                rotate(${-degBody})
+                scale(${scaleX}, ${scaleY})
+                rotate(${degBody})
+                translate(${-RING_CX}, ${-RING_CY})
+            `);
+
+            // Update Debug Indicator
+            // (Debug content handled inside sub-step)
+
+            // --- Camera Render ---
+            const pov = povSelect.value;
+            mainSvg.setAttribute('viewBox', `0 0 ${virtualW} ${virtualH}`);
+
+            const groundGroup = document.getElementById('ground');
+
+            if (pov === 'world') {
+                // Camera tracks robot horizontally, ground scrolls
+                const camOffsetX = SCREEN_CENTER_X - (physics.x - 400);
+                groundGroup.setAttribute('transform', `translate(${camOffsetX}, ${GROUND_Y})`);
+                robotWrapper.setAttribute('transform', `
+                    translate(${SCREEN_CENTER_X}, ${physics.y})
+                    rotate(${degBody})
+                    translate(${-window.lastFinalComX}, ${-window.lastFinalComY})
+                `);
+            } else {
+                // Robot-centric: Fixed Robot in viewport center
+                robotWrapper.setAttribute('transform', `
+                    translate(${SCREEN_CENTER_X}, ${virtualH / 2})
+                    translate(${-window.lastFinalComX}, ${-window.lastFinalComY})
+                `);
+                // Rotate and translate ground inversely
+                groundGroup.setAttribute('transform', `
+                    translate(${SCREEN_CENTER_X}, ${virtualH / 2})
+                    rotate(${-degBody})
+                    translate(${-(physics.x - 400 + SCREEN_CENTER_X)}, ${GROUND_Y - physics.y - virtualH / 2})
+                `);
+            }
+
             requestAnimationFrame(animate);
         }
 
-        // Start animation loop
         requestAnimationFrame(animate);
     </script>
-
-</body>
-
-</html>
 </body>
 
 </html>

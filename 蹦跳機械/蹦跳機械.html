@@ -431,8 +431,8 @@
             vx: 0,
             vy: 0,
             omega: 0,
-            mass: 1,
-            inertia: 20000,
+            mass: 1, // Will be updated dynamically
+            inertia: 20000, // Will be updated dynamically
             gravity: 5000
         };
 
@@ -504,13 +504,13 @@
         initRingSVG();
 
         const staticParts = [
-            { name: "Ring", area: Math.PI * (RING_R_OUTER * RING_R_OUTER - RING_R_INNER * RING_R_INNER), density: DENSITY_PVC, cx: RING_CX, cy: RING_CY },
-            { name: "Main Board", area: 610 * 20, density: DENSITY_WOOD, cx: 395, cy: 210 },
-            { name: "Left Tip", area: 50 * 15, density: DENSITY_WOOD, cx: 85, cy: 207.5 },
-            { name: "Right Thigh", area: 65 * 215, density: DENSITY_WOOD, cx: 667.5, cy: 322.5 },
-            { name: "Battery Box", area: 80 * 50, density: DENSITY_BATTERY, cx: 650, cy: 175 },
-            { name: "Right Calf", area: 65 * 220, density: DENSITY_WOOD, cx: 615.16, cy: 507.20 },
-            { name: "Crane Bracket", area: 900, density: DENSITY_METAL, cx: 400, cy: 187.5 }
+            { name: "Ring", area: Math.PI * (RING_R_OUTER * RING_R_OUTER - RING_R_INNER * RING_R_INNER), density: DENSITY_PVC, cx: RING_CX, cy: RING_CY, w: 130, h: 130, isCircle: true },
+            { name: "Main Board", area: 610 * 20, density: DENSITY_WOOD, cx: 395, cy: 210, w: 610, h: 20 },
+            { name: "Left Tip", area: 50 * 15, density: DENSITY_WOOD, cx: 85, cy: 207.5, w: 50, h: 15 },
+            { name: "Right Thigh", area: 65 * 215, density: DENSITY_WOOD, cx: 667.5, cy: 322.5, w: 65, h: 215 },
+            { name: "Battery Box", area: 80 * 50, density: DENSITY_BATTERY, cx: 650, cy: 175, w: 80, h: 50 },
+            { name: "Right Calf", area: 65 * 220, density: DENSITY_WOOD, cx: 615.16, cy: 507.20, w: 65, h: 220 },
+            { name: "Crane Bracket", area: 900, density: DENSITY_METAL, cx: 400, cy: 187.5, w: 20, h: 25 }
         ];
 
         let totalStaticMass = 0, staticCxSum = 0, staticCySum = 0;
@@ -603,17 +603,55 @@
                 const finalComX = (staticCxSum + armGlobalX * armMass + diaGlobalX * diaMass) / totalMass;
                 const finalComY = (staticCySum + armGlobalY * armMass + diaGlobalY * diaMass) / totalMass;
 
+                // Update physics mass and dynamically calculate Inertia
+                physics.mass = totalMass;
+                let momentInertia = 0;
+                
+                // Static parts Contribution to I
+                staticParts.forEach(p => {
+                    const m = p.area * p.density;
+                    const dx = p.cx - finalComX;
+                    const dy = p.cy - finalComY;
+                    let icm = 0;
+                    if (p.isCircle) {
+                        icm = 0.5 * m * (RING_R_OUTER * RING_R_OUTER + RING_R_INNER * RING_R_INNER);
+                    } else {
+                        icm = (1/12) * m * (p.w * p.w + p.h * p.h);
+                    }
+                    momentInertia += icm + m * (dx * dx + dy * dy);
+                });
+                // Dynamic Crane parts Contribution to I
+                const armDx = armGlobalX - finalComX, armDy = armGlobalY - finalComY;
+                momentInertia += (1/12) * armMass * (20*20 + 70*70) + armMass * (armDx*armDx + armDy*armDy);
+                const diaDx = diaGlobalX - finalComX, diaDy = diaGlobalY - finalComY;
+                momentInertia += (1/12) * diaMass * (60*60 + 60*60) + diaMass * (diaDx*diaDx + diaDy*diaDy);
+                physics.inertia = momentInertia;
+
                 // Shapes relative to CURRENT sub-step COM
                 const shapes = [
                     { type: 'PVC', shape: 'circle', cx: RING_CX - finalComX, cy: RING_CY - finalComY, r: RING_R_OUTER },
                     { type: 'WOOD', shape: 'point', dx: brX - finalComX, dy: brY - finalComY },
-                    { type: 'WOOD', shape: 'point', dx: blX - finalComX, dy: blY - finalComY }
+                    { type: 'WOOD', shape: 'point', dx: blX - finalComX, dy: blY - finalComY },
+                    // NEW: Body Collision Points (Main Board Corners)
+                    { type: 'WOOD', shape: 'point', dx: 90 - finalComX, dy: 200 - finalComY },
+                    { type: 'WOOD', shape: 'point', dx: 700 - finalComX, dy: 200 - finalComY },
+                    { type: 'WOOD', shape: 'point', dx: 90 - finalComX, dy: 220 - finalComY },
+                    { type: 'WOOD', shape: 'point', dx: 700 - finalComX, dy: 220 - finalComY }
                 ];
 
                 let totalFx = 0; // Horizontal forces
                 let totalFy = physics.mass * physics.gravity; // Gravity Down
                 let totalTorque = 0;
                 const cR = Math.cos(physics.angle), sR = Math.sin(physics.angle);
+
+                // --- Scale factor for UI settings since physics.mass is now much larger ---
+                // We divide forces by this factor in integral or multiply UI K/D
+                // But easier: divide calculated accelerations if we want to keep feel.
+                // However, user said "update physics core", so I will use raw mass logic.
+                // To keep stability, I will multiply K/D internally by a scale factor.
+                const massScale = 55000; 
+                const gainK = MAT['PVC'].K * massScale, gainD = MAT['PVC'].D * massScale;
+                const woodGainK = MAT['WOOD'].K * massScale, woodGainD = MAT['WOOD'].D * massScale;
 
                 shapes.forEach(sh => {
                     if (sh.shape === 'point') {
@@ -623,7 +661,9 @@
                         if (worldY > GROUND_Y) {
                             const penetration = worldY - GROUND_Y;
                             const ptVy = physics.vy + physics.omega * wx;
-                            const forceY = -MAT[sh.type].K * penetration - MAT[sh.type].D * ptVy;
+                            const K = MAT[sh.type].K * massScale;
+                            const D = MAT[sh.type].D * massScale;
+                            const forceY = -K * penetration - D * ptVy;
                             if (forceY < 0) {
                                 totalFy += forceY;
                                 totalTorque += wx * forceY;
@@ -631,7 +671,7 @@
                                 const ptVx = physics.vx - physics.omega * wy;
                                 const maxFriction = MAT[sh.type].mu * Math.abs(forceY);
                                 const frictionX = Math.abs(ptVx) < 2 ? 0 :
-                                    -Math.sign(ptVx) * Math.min(maxFriction, Math.abs(ptVx) * frictionGain);
+                                    -Math.sign(ptVx) * Math.min(maxFriction, Math.abs(ptVx) * frictionGain * massScale);
                                 totalFx += frictionX;
                                 totalTorque += -wy * frictionX;
                             }
@@ -644,7 +684,9 @@
                             const penetration = worldY - GROUND_Y;
                             maxPvcPenetration = Math.max(maxPvcPenetration, penetration);
                             const ptVy = physics.vy + physics.omega * wx;
-                            const forceY = -MAT[sh.type].K * penetration - MAT[sh.type].D * ptVy;
+                            const K = MAT[sh.type].K * massScale;
+                            const D = MAT[sh.type].D * massScale;
+                            const forceY = -K * penetration - D * ptVy;
                             if (forceY < 0) {
                                 totalFy += forceY;
                                 totalTorque += wx * forceY;
@@ -652,7 +694,7 @@
                                 const ptVx = physics.vx - physics.omega * (wy + sh.r);
                                 const maxFriction = MAT[sh.type].mu * Math.abs(forceY);
                                 const frictionX = Math.abs(ptVx) < 2 ? 0 :
-                                    -Math.sign(ptVx) * Math.min(maxFriction, Math.abs(ptVx) * frictionGain);
+                                    -Math.sign(ptVx) * Math.min(maxFriction, Math.abs(ptVx) * frictionGain * massScale);
                                 totalFx += frictionX;
                                 if (Math.abs(ptVx) > maxPtVx) maxPtVx = Math.abs(ptVx);
                                 totalTorque += -(wy + (sh.r || 0)) * frictionX;

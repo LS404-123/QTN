@@ -365,6 +365,7 @@
                         <span id="fGainVal">100</span>
                     </div>
                 </div>
+                <button id="resetDefaultsBtn" style="margin-top: 10px; padding: 12px; background-color: #f44336; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s;">Reset All to Defaults (重置所有參數)</button>
             </div>
         </div>
     </div>
@@ -425,6 +426,8 @@
             physics.isPaused = true;
             window.lastFinalComX = 400;
             window.lastFinalComY = 300;
+            pauseToggle.textContent = 'Resume';
+            pauseToggle.style.backgroundColor = '#ffecb3';
         }
 
         resetBtn.addEventListener('click', prepareRobot);
@@ -432,11 +435,43 @@
         quickDropBtn.addEventListener('click', () => {
             prepareRobot();
             physics.isPaused = false;
+            pauseToggle.textContent = 'Hold';
+            pauseToggle.style.backgroundColor = '';
         });
 
         pauseToggle.addEventListener('click', () => {
             physics.isPaused = !physics.isPaused;
             pauseToggle.textContent = physics.isPaused ? 'Resume' : 'Hold';
+            pauseToggle.style.backgroundColor = physics.isPaused ? '#ffecb3' : '';
+        });
+
+        const resetDefaultsBtn = document.getElementById('resetDefaultsBtn');
+
+        const DEFAULTS = {
+            speedSlider: 1,
+            ringXSlider: 150,
+            tiltSlider: 0,
+            povSelect: 'world',
+            kPvc: 3000, dPvc: 60, muPvc: 0.3,
+            kWood: 20000, dWood: 300, muWood: 0.4,
+            gVal: 5000,
+            fGain: 100
+        };
+
+        resetDefaultsBtn.addEventListener('click', () => {
+            Object.keys(DEFAULTS).forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.value = DEFAULTS[id];
+                    // Trigger input event to update displays and internal state
+                    el.dispatchEvent(new Event('input'));
+                }
+            });
+            prepareRobot();
+            // Reset motor state if needed
+            motorRunning = true;
+            motorBtn.textContent = 'Stop Motor';
+            motorBtn.style.backgroundColor = '#e0e0e0';
         });
 
         // [Part 3] Full 2D Rigid Body Physics State
@@ -604,7 +639,7 @@
             const currentFrameContacts = [];
 
             for (let step = 0; step < SUBSTEPS; step++) {
-                if (motorRunning) {
+                if (motorRunning && !physics.isPaused) {
                     currentAngle += (BASE_SPEED * speedMultiplier * subDT); // Update at sub-step resolution
                     currentAngle = currentAngle % 360;
                 }

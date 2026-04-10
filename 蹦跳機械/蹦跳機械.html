@@ -183,6 +183,8 @@
                     </g>
                     <!-- Ground hatching container -->
                     <g id="ground-hatching"></g>
+                    <!-- CONTACT POINT MARKERS (WORLD SPACE) -->
+                    <g id="contact-points-group"></g>
                 </g>
 
                 <!-- ROBOT ASSEMBLY -->
@@ -248,6 +250,7 @@
                             </g>
                         </g>
                     </g>
+                    <!-- CONTACT POINT MARKERS (MOVED TO GROUND) -->
                     <!-- CENTER OF MASS MARKER -->
                     <g id="com-marker">
                         <circle cx="0" cy="0" r="12" fill="none" stroke="#e91e63" stroke-width="2" />
@@ -384,6 +387,18 @@
         const debugIndicator = document.getElementById('debug-indicator');
         const mainSvg = document.getElementById('main-svg');
         const leftRingGroup = document.getElementById('left-ring');
+        const contactPointsGroup = document.getElementById('contact-points-group');
+
+        // Create a pool of contact point dots
+        const contactDots = [];
+        for (let i = 0; i < 20; i++) {
+            const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            dot.setAttribute('r', '4');
+            dot.setAttribute('fill', '#ff1744');
+            dot.setAttribute('style', 'display: none;');
+            contactPointsGroup.appendChild(dot);
+            contactDots.push(dot);
+        }
 
         window.lastFinalComX = 400;
         window.lastFinalComY = 300;
@@ -408,6 +423,8 @@
             physics.vy = 0;
             physics.omega = 0;
             physics.isPaused = true;
+            window.lastFinalComX = 400;
+            window.lastFinalComY = 300;
         }
 
         resetBtn.addEventListener('click', prepareRobot);
@@ -584,6 +601,7 @@
             const subDT = deltaTime / SUBSTEPS;
             let maxPvcPenetration = 0;
             let maxPtVx = 0;
+            const currentFrameContacts = [];
 
             for (let step = 0; step < SUBSTEPS; step++) {
                 if (motorRunning) {
@@ -667,6 +685,9 @@
                             if (forceY < 0) {
                                 totalFy += forceY;
                                 totalTorque += wx * forceY;
+                                if (step === SUBSTEPS - 1) {
+                                    currentFrameContacts.push({ x: physics.x + wx, y: worldY });
+                                }
                                 // --- Friction ---
                                 const ptVx = physics.vx - physics.omega * wy;
                                 const maxFriction = MAT[sh.type].mu * Math.abs(forceY);
@@ -690,6 +711,9 @@
                             if (forceY < 0) {
                                 totalFy += forceY;
                                 totalTorque += wx * forceY;
+                                if (step === SUBSTEPS - 1) {
+                                    currentFrameContacts.push({ x: physics.x + wx, y: worldY });
+                                }
                                 // --- Friction ---
                                 const ptVx = physics.vx - physics.omega * (wy + sh.r);
                                 const maxFriction = MAT[sh.type].mu * Math.abs(forceY);
@@ -765,6 +789,18 @@
                 translate(${-RING_CX}, ${-RING_CY})
             `);
 
+            // Update Contact Point Dots
+            contactDots.forEach((dot, i) => {
+                if (i < currentFrameContacts.length) {
+                    const pt = currentFrameContacts[i];
+                    dot.setAttribute('cx', pt.x);
+                    dot.setAttribute('cy', 0); // Ground group is already at Y=800
+                    dot.setAttribute('style', 'display: block; opacity: 1.0;');
+                } else {
+                    dot.setAttribute('style', 'display: none;');
+                }
+            });
+
             // Update Debug Indicator
             // (Debug content handled inside sub-step)
 
@@ -776,7 +812,7 @@
 
             if (pov === 'world') {
                 // Camera tracks robot horizontally, ground scrolls
-                const camOffsetX = SCREEN_CENTER_X - (physics.x - 400);
+                const camOffsetX = SCREEN_CENTER_X - physics.x;
                 groundGroup.setAttribute('transform', `translate(${camOffsetX}, ${GROUND_Y})`);
                 robotWrapper.setAttribute('transform', `
                     translate(${SCREEN_CENTER_X}, ${physics.y})
@@ -784,7 +820,7 @@
                     translate(${-window.lastFinalComX}, ${-window.lastFinalComY})
                 `);
             } else {
-                // Robot-centric: Fixed Robot in viewport center
+                // Robot-centric: Fixed Robot in viewport center, Always Upright
                 robotWrapper.setAttribute('transform', `
                     translate(${SCREEN_CENTER_X}, ${virtualH / 2})
                     translate(${-window.lastFinalComX}, ${-window.lastFinalComY})
@@ -793,7 +829,7 @@
                 groundGroup.setAttribute('transform', `
                     translate(${SCREEN_CENTER_X}, ${virtualH / 2})
                     rotate(${-degBody})
-                    translate(${-(physics.x - 400 + SCREEN_CENTER_X)}, ${GROUND_Y - physics.y - virtualH / 2})
+                    translate(${-physics.x}, ${GROUND_Y - physics.y})
                 `);
             }
 

@@ -359,6 +359,11 @@
                         <input type="range" id="fGain" min="1" max="2000" step="1" value="100">
                         <span id="fGainVal">100</span>
                     </div>
+                    <div class="setting-row">
+                        <label>Structural Compliance</label>
+                        <input type="range" id="complianceSlider" min="0.01" max="1" step="0.01" value="1">
+                        <span id="complianceVal">1.00</span>
+                    </div>
                 </div>
                 <button id="resetDefaultsBtn" style="margin-top: 10px; padding: 12px; background-color: #f44336; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s;">Reset All to Defaults (重置所有參數)</button>
             </div>
@@ -455,13 +460,22 @@
             kWood: 20000, dWood: 300, muWood: 0.4,
             gVal: 5000,
             fGain: 100,
-            timeScaleSlider: 1
+            timeScaleSlider: 1,
+            complianceSlider: 1
         };
 
         let timeScale = 1.0;
         timeScaleSlider.addEventListener('input', () => {
             timeScale = parseFloat(timeScaleSlider.value);
             timeScaleVal.textContent = timeScale.toFixed(2) + 'x';
+        });
+
+        const complianceSlider = document.getElementById('complianceSlider');
+        const complianceVal = document.getElementById('complianceVal');
+        let complianceFactor = 1.0;
+        complianceSlider.addEventListener('input', () => {
+            complianceFactor = parseFloat(complianceSlider.value);
+            complianceVal.textContent = complianceFactor.toFixed(2);
         });
 
         const history = [];
@@ -814,17 +828,19 @@
                             const forceY = -K * penetration - D * ptVy;
                             if (forceY < 0) {
                                 totalFy += forceY;
-                                totalTorque += wx * forceY;
-                                if (step === SUBSTEPS - 1) {
-                                    currentFrameContacts.push({ x: physics.x + wx, y: worldY });
-                                }
-                                // --- Friction ---
+                                
+                                // --- Friction Calculation First ---
                                 const ptVx = physics.vx - physics.omega * wy;
                                 const maxFriction = MAT[sh.type].mu * Math.abs(forceY);
                                 const frictionX = Math.abs(ptVx) < 2 ? 0 :
                                     -Math.sign(ptVx) * Math.min(maxFriction, Math.abs(ptVx) * frictionGain * massScale);
+                                
                                 totalFx += frictionX;
-                                totalTorque += -wy * frictionX;
+                                totalTorque += (wx * forceY + (-wy * frictionX)) * complianceFactor;
+
+                                if (step === SUBSTEPS - 1) {
+                                    currentFrameContacts.push({ x: physics.x + wx, y: worldY });
+                                }
                             }
                         }
                     } else if (sh.shape === 'circle') {
@@ -840,18 +856,20 @@
                             const forceY = -K * penetration - D * ptVy;
                             if (forceY < 0) {
                                 totalFy += forceY;
-                                totalTorque += wx * forceY;
-                                if (step === SUBSTEPS - 1) {
-                                    currentFrameContacts.push({ x: physics.x + wx, y: worldY });
-                                }
-                                // --- Friction ---
+
+                                // --- Friction Calculation First ---
                                 const ptVx = physics.vx - physics.omega * (wy + sh.r);
                                 const maxFriction = MAT[sh.type].mu * Math.abs(forceY);
                                 const frictionX = Math.abs(ptVx) < 2 ? 0 :
                                     -Math.sign(ptVx) * Math.min(maxFriction, Math.abs(ptVx) * frictionGain * massScale);
+
                                 totalFx += frictionX;
                                 if (Math.abs(ptVx) > maxPtVx) maxPtVx = Math.abs(ptVx);
-                                totalTorque += -(wy + (sh.r || 0)) * frictionX;
+                                totalTorque += (wx * forceY + (-(wy + (sh.r || 0)) * frictionX)) * complianceFactor;
+
+                                if (step === SUBSTEPS - 1) {
+                                    currentFrameContacts.push({ x: physics.x + wx, y: worldY });
+                                }
                             }
                         }
                     }

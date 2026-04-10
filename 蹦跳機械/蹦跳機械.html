@@ -158,28 +158,7 @@
                         stroke-linecap="round" />
                     <!-- Ruler tick marks every 100px -->
                     <g id="ground-ticks" fill="#999" font-size="11" font-family="monospace" text-anchor="middle">
-                        <script>
-                            (() => {
-                                const g = document.getElementById('ground-ticks');
-                                for (let x = -5000; x <= 6000; x += 100) {
-                                    const isMajor = x % 500 === 0;
-                                    const h = isMajor ? 16 : 8;
-                                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                                    line.setAttribute('x1', x); line.setAttribute('y1', 0);
-                                    line.setAttribute('x2', x); line.setAttribute('y2', h);
-                                    line.setAttribute('stroke', isMajor ? '#666' : '#aaa');
-                                    line.setAttribute('stroke-width', isMajor ? 2 : 1);
-                                    g.appendChild(line);
-                                    if (isMajor) {
-                                        const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                                        txt.setAttribute('x', x); txt.setAttribute('y', h + 14);
-                                        txt.setAttribute('fill', '#888');
-                                        txt.textContent = x + 'px';
-                                        g.appendChild(txt);
-                                    }
-                                }
-                            })();
-                        </script>
+                        <!-- Ground ticks will be generated dynamically -->
                     </g>
                     <!-- Ground hatching container -->
                     <g id="ground-hatching"></g>
@@ -532,6 +511,40 @@
             window.lastFinalComY = s.lastFinalComY;
         }
 
+        const groundTicksGroup = document.getElementById('ground-ticks');
+        let lastGroundX = -9999;
+        function updateGround(worldX) {
+            // Only update when camera has moved significantly (e.g. 50px)
+            if (Math.abs(worldX - lastGroundX) < 50) return;
+            lastGroundX = worldX;
+
+            groundTicksGroup.innerHTML = '';
+            const range = 1500; // Visible range around robot
+            const startX = Math.floor((worldX - range) / 100) * 100;
+            const endX = Math.ceil((worldX + range) / 100) * 100;
+
+            for (let x = startX; x <= endX; x += 100) {
+                const isMajor = x % 500 === 0;
+                const h = isMajor ? 35 : 15;
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x); line.setAttribute('y1', 0);
+                line.setAttribute('x2', x); line.setAttribute('y2', h);
+                line.setAttribute('stroke', isMajor ? '#666' : '#aaa');
+                line.setAttribute('stroke-width', isMajor ? 2 : 1);
+                groundTicksGroup.appendChild(line);
+                if (isMajor) {
+                    const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    txt.setAttribute('x', x); txt.setAttribute('y', h + 14);
+                    txt.setAttribute('fill', '#888');
+                    txt.setAttribute('font-size', '14');
+                    txt.setAttribute('font-family', 'sans-serif');
+                    txt.setAttribute('text-anchor', 'middle');
+                    txt.textContent = x + 'px';
+                    groundTicksGroup.appendChild(txt);
+                }
+            }
+        }
+
         resetDefaultsBtn.addEventListener('click', () => {
             Object.keys(DEFAULTS).forEach(id => {
                 const el = document.getElementById(id);
@@ -853,8 +866,9 @@
                     physics.vx += (totalFx / physics.mass) * subDT;
                     physics.vy += (totalFy / physics.mass) * subDT;
                     physics.omega += (totalTorque / physics.inertia) * subDT;
-                    // Clamp small residual velocities to zero
+                    // Clamp small residual velocities to zero (Avoid jitter on ground)
                     if (Math.abs(physics.vx) < 2 && Math.abs(totalFx) < 1) physics.vx = 0;
+                    if (Math.abs(physics.vy) < 1 && Math.abs(totalFy) < 1) physics.vy = 0;
                     if (Math.abs(physics.omega) < 0.01) physics.omega = 0;
                     physics.x += physics.vx * subDT;
                     physics.y += physics.vy * subDT;
@@ -893,6 +907,7 @@
 
             if (!physics.isPaused && !isScrubbing) {
                 saveState();
+                updateGround(physics.x);
             }
 
             // --- Visual SVG Deformation for PVC Spring ---

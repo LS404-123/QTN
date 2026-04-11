@@ -128,7 +128,8 @@
 
     <div class="app-container">
         <div class="canvas-wrapper">
-            <svg id="main-svg" style="width:100%; height:100%;" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+            <svg id="main-svg" style="width:100%; height:100%;" viewBox="0 0 800 600"
+                xmlns="http://www.w3.org/2000/svg">
 
                 <!-- Definitions for filters and gradients -->
                 <defs>
@@ -287,7 +288,9 @@
                     <button id="resetBtn">Prepare Space</button>
                 </div>
                 <div class="button-row" style="gap: 5px;">
-                    <button id="quickDropBtn" style="background-color: #81c784; color: white; border: none; font-weight: bold; flex: 2;">Quick Drop (一鍵投放)</button>
+                    <button id="quickDropBtn"
+                        style="background-color: #81c784; color: white; border: none; font-weight: bold; flex: 2;">Quick
+                        Drop (一鍵投放)</button>
                     <button id="pauseToggle" style="flex: 1;">Hold</button>
                 </div>
             </div>
@@ -359,13 +362,10 @@
                         <input type="range" id="fGain" min="1" max="2000" step="1" value="100">
                         <span id="fGainVal">100</span>
                     </div>
-                    <div class="setting-row">
-                        <label>Structural Compliance</label>
-                        <input type="range" id="complianceSlider" min="0.01" max="1" step="0.01" value="1">
-                        <span id="complianceVal">1.00</span>
-                    </div>
                 </div>
-                <button id="resetDefaultsBtn" style="margin-top: 10px; padding: 12px; background-color: #f44336; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s;">Reset All to Defaults (重置所有參數)</button>
+                <button id="resetDefaultsBtn"
+                    style="margin-top: 10px; padding: 12px; background-color: #f44336; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s;">Reset
+                    All to Defaults (重置所有參數)</button>
             </div>
         </div>
     </div>
@@ -460,22 +460,13 @@
             kWood: 20000, dWood: 300, muWood: 0.4,
             gVal: 5000,
             fGain: 100,
-            timeScaleSlider: 1,
-            complianceSlider: 1
+            timeScaleSlider: 1
         };
 
         let timeScale = 1.0;
         timeScaleSlider.addEventListener('input', () => {
             timeScale = parseFloat(timeScaleSlider.value);
             timeScaleVal.textContent = timeScale.toFixed(2) + 'x';
-        });
-
-        const complianceSlider = document.getElementById('complianceSlider');
-        const complianceVal = document.getElementById('complianceVal');
-        let complianceFactor = 1.0;
-        complianceSlider.addEventListener('input', () => {
-            complianceFactor = parseFloat(complianceSlider.value);
-            complianceVal.textContent = complianceFactor.toFixed(2);
         });
 
         const history = [];
@@ -487,7 +478,7 @@
             physics.isPaused = true;
             pauseToggle.textContent = 'Resume';
             pauseToggle.style.backgroundColor = '#ffecb3';
-            
+
             const index = parseInt(timelineSlider.value);
             if (history[index]) {
                 applyState(history[index]);
@@ -509,7 +500,7 @@
                 lastFinalComY: window.lastFinalComY
             });
             if (history.length > MAX_HISTORY) history.shift();
-            
+
             timelineSlider.disabled = false;
             timelineSlider.max = history.length - 1;
             if (!isScrubbing) timelineSlider.value = history.length - 1;
@@ -575,7 +566,7 @@
             timelineSlider.value = 0;
             timelineSlider.disabled = true;
             historyInfo.textContent = 'Recording: 0s';
-            
+
             // Reset motor state if needed
             motorRunning = true;
             motorBtn.textContent = 'Stop Motor';
@@ -721,7 +712,7 @@
         // Ensure legacy physics is overridden natively
         function animate(time) {
             if (lastTime === null) { lastTime = time; }
-            let deltaTime = Math.min((time - lastTime) / 1000, 0.05); 
+            let deltaTime = Math.min((time - lastTime) / 1000, 0.05);
             deltaTime *= timeScale; // Applying slow motion
             lastTime = time;
 
@@ -749,13 +740,12 @@
 
             for (let step = 0; step < SUBSTEPS; step++) {
                 if (motorRunning && !physics.isPaused) {
-                    currentAngle += (BASE_SPEED * speedMultiplier * subDT); 
+                    currentAngle += (BASE_SPEED * speedMultiplier * subDT);
                     currentAngle = currentAngle % 360;
                 }
                 const radC = currentAngle * Math.PI / 180;
                 const cosA = Math.cos(radC), sinA = Math.sin(radC);
 
-                // Sub-step COM update
                 const armGlobalX = cranePivotX - armLocalCy * sinA;
                 const armGlobalY = cranePivotY + armLocalCy * cosA;
                 const diaGlobalX = cranePivotX - diaLocalCy * sinA;
@@ -765,11 +755,9 @@
                 const finalComX = (staticCxSum + armGlobalX * armMass + diaGlobalX * diaMass) / totalMass;
                 const finalComY = (staticCySum + armGlobalY * armMass + diaGlobalY * diaMass) / totalMass;
 
-                // Update physics mass and dynamically calculate Inertia
                 physics.mass = totalMass;
                 let momentInertia = 0;
-                
-                // Static parts Contribution to I
+
                 staticParts.forEach(p => {
                     const m = p.area * p.density;
                     const dx = p.cx - finalComX;
@@ -778,42 +766,51 @@
                     if (p.isCircle) {
                         icm = 0.5 * m * (RING_R_OUTER * RING_R_OUTER + RING_R_INNER * RING_R_INNER);
                     } else {
-                        icm = (1/12) * m * (p.w * p.w + p.h * p.h);
+                        icm = (1 / 12) * m * (p.w * p.w + p.h * p.h);
                     }
                     momentInertia += icm + m * (dx * dx + dy * dy);
                 });
-                // Dynamic Crane parts Contribution to I
                 const armDx = armGlobalX - finalComX, armDy = armGlobalY - finalComY;
-                momentInertia += (1/12) * armMass * (20*20 + 70*70) + armMass * (armDx*armDx + armDy*armDy);
+                momentInertia += (1 / 12) * armMass * (20 * 20 + 70 * 70) + armMass * (armDx * armDx + armDy * armDy);
                 const diaDx = diaGlobalX - finalComX, diaDy = diaGlobalY - finalComY;
-                momentInertia += (1/12) * diaMass * (60*60 + 60*60) + diaMass * (diaDx*diaDx + diaDy*diaDy);
+                momentInertia += (1 / 12) * diaMass * (60 * 60 + 60 * 60) + diaMass * (diaDx * diaDx + diaDy * diaDy);
                 physics.inertia = momentInertia;
 
-                // Shapes relative to CURRENT sub-step COM
                 const shapes = [
                     { type: 'PVC', shape: 'circle', cx: RING_CX - finalComX, cy: RING_CY - finalComY, r: RING_R_OUTER },
                     { type: 'WOOD', shape: 'point', dx: brX - finalComX, dy: brY - finalComY },
                     { type: 'WOOD', shape: 'point', dx: blX - finalComX, dy: blY - finalComY },
-                    // NEW: Body Collision Points (Main Board Corners)
                     { type: 'WOOD', shape: 'point', dx: 90 - finalComX, dy: 200 - finalComY },
                     { type: 'WOOD', shape: 'point', dx: 700 - finalComX, dy: 200 - finalComY },
                     { type: 'WOOD', shape: 'point', dx: 90 - finalComX, dy: 220 - finalComY },
                     { type: 'WOOD', shape: 'point', dx: 700 - finalComX, dy: 220 - finalComY }
                 ];
 
-                let totalFx = 0; // Horizontal forces
-                let totalFy = physics.mass * physics.gravity; // Gravity Down
-                let totalTorque = 0;
                 const cR = Math.cos(physics.angle), sR = Math.sin(physics.angle);
+                const massScale = 55000;
+                
+                // --- 支點偵測 (Pivot Detection) ---
+                let activePivot = null;
+                let maxWoodPen = 0;
 
-                // --- Scale factor for UI settings since physics.mass is now much larger ---
-                // We divide forces by this factor in integral or multiply UI K/D
-                // But easier: divide calculated accelerations if we want to keep feel.
-                // However, user said "update physics core", so I will use raw mass logic.
-                // To keep stability, I will multiply K/D internally by a scale factor.
-                const massScale = 55000; 
-                const gainK = MAT['PVC'].K * massScale, gainD = MAT['PVC'].D * massScale;
-                const woodGainK = MAT['WOOD'].K * massScale, woodGainD = MAT['WOOD'].D * massScale;
+                shapes.forEach(sh => {
+                    if (sh.type === 'WOOD' && sh.shape === 'point') {
+                        const wx = cR * sh.dx - sR * sh.dy;
+                        const wy = sR * sh.dx + cR * sh.dy;
+                        const worldY = physics.y + wy;
+                        if (worldY > GROUND_Y) {
+                            const penetration = worldY - GROUND_Y;
+                            if (penetration > maxWoodPen) {
+                                maxWoodPen = penetration;
+                                activePivot = { wx, wy, localDx: sh.dx, localDy: sh.dy, type: 'WOOD' };
+                            }
+                        }
+                    }
+                });
+
+                let totalFx = 0;
+                let totalFy = physics.mass * physics.gravity;
+                let totalTorque = 0;
 
                 shapes.forEach(sh => {
                     if (sh.shape === 'point') {
@@ -828,19 +825,16 @@
                             const forceY = -K * penetration - D * ptVy;
                             if (forceY < 0) {
                                 totalFy += forceY;
-                                
-                                // --- Friction Calculation First ---
+                                totalTorque += wx * forceY;
+                                if (step === SUBSTEPS - 1) {
+                                    currentFrameContacts.push({ x: physics.x + wx, y: worldY });
+                                }
                                 const ptVx = physics.vx - physics.omega * wy;
                                 const maxFriction = MAT[sh.type].mu * Math.abs(forceY);
                                 const frictionX = Math.abs(ptVx) < 2 ? 0 :
                                     -Math.sign(ptVx) * Math.min(maxFriction, Math.abs(ptVx) * frictionGain * massScale);
-                                
                                 totalFx += frictionX;
-                                totalTorque += (wx * forceY + (-wy * frictionX)) * complianceFactor;
-
-                                if (step === SUBSTEPS - 1) {
-                                    currentFrameContacts.push({ x: physics.x + wx, y: worldY });
-                                }
+                                totalTorque += -wy * frictionX;
                             }
                         }
                     } else if (sh.shape === 'circle') {
@@ -856,45 +850,68 @@
                             const forceY = -K * penetration - D * ptVy;
                             if (forceY < 0) {
                                 totalFy += forceY;
-
-                                // --- Friction Calculation First ---
+                                totalTorque += wx * forceY;
+                                if (step === SUBSTEPS - 1) {
+                                    currentFrameContacts.push({ x: physics.x + wx, y: worldY });
+                                }
                                 const ptVx = physics.vx - physics.omega * (wy + sh.r);
                                 const maxFriction = MAT[sh.type].mu * Math.abs(forceY);
                                 const frictionX = Math.abs(ptVx) < 2 ? 0 :
                                     -Math.sign(ptVx) * Math.min(maxFriction, Math.abs(ptVx) * frictionGain * massScale);
-
                                 totalFx += frictionX;
                                 if (Math.abs(ptVx) > maxPtVx) maxPtVx = Math.abs(ptVx);
-                                totalTorque += (wx * forceY + (-(wy + (sh.r || 0)) * frictionX)) * complianceFactor;
-
-                                if (step === SUBSTEPS - 1) {
-                                    currentFrameContacts.push({ x: physics.x + wx, y: worldY });
-                                }
+                                totalTorque += -(wy + sh.r) * frictionX;
                             }
                         }
                     }
                 });
 
-                // Integrate if not paused
                 if (!physics.isPaused) {
-                    // Angular damping (air resistance to spin)
-                    const angularDamping = -0.5 * physics.omega;
-                    totalTorque += angularDamping * physics.inertia;
+                    const angularDamping = -1.0 * physics.omega; // Slightly increase damping for stability
+                    
+                    if (activePivot) {
+                        const pivotWorldX = physics.x + activePivot.wx;
+                        // Force the pivot to be exactly at ground level to prevent visual penetration
+                        const pivotWorldY = GROUND_Y; 
 
-                    physics.vx += (totalFx / physics.mass) * subDT;
-                    physics.vy += (totalFy / physics.mass) * subDT;
-                    physics.omega += (totalTorque / physics.inertia) * subDT;
-                    // Clamp small residual velocities to zero (Avoid jitter on ground)
-                    if (Math.abs(physics.vx) < 2 && Math.abs(totalFx) < 1) physics.vx = 0;
-                    if (Math.abs(physics.vy) < 1 && Math.abs(totalFy) < 1) physics.vy = 0;
-                    if (Math.abs(physics.omega) < 0.01) physics.omega = 0;
-                    physics.x += physics.vx * subDT;
-                    physics.y += physics.vy * subDT;
-                    physics.angle += physics.omega * subDT;
+                        const rSq = activePivot.wx * activePivot.wx + activePivot.wy * activePivot.wy;
+                        const iPivot = physics.inertia + physics.mass * rSq;
+                        
+                        // τ_pivot = τ_com - r_p x F_total
+                        const torquePivot = totalTorque - (activePivot.wx * totalFy - activePivot.wy * totalFx) + angularDamping * physics.inertia;
+                        
+                        const alpha = torquePivot / iPivot;
+                        physics.omega += alpha * subDT;
+                        physics.angle += physics.omega * subDT;
+
+                        // Use the pivot coordinates stored during detection
+                        const newCR = Math.cos(physics.angle), newSR = Math.sin(physics.angle);
+                        const newWx = newCR * activePivot.localDx - newSR * activePivot.localDy;
+                        const newWy = newSR * activePivot.localDx + newCR * activePivot.localDy;
+                        physics.x = pivotWorldX - newWx;
+                        physics.y = pivotWorldY - newWy;
+
+                        physics.vx = physics.omega * newWy;
+                        physics.vy = -physics.omega * newWx;
+                    } else {
+                        totalTorque += angularDamping * physics.inertia;
+                        physics.vx += (totalFx / physics.mass) * subDT;
+                        physics.vy += (totalFy / physics.mass) * subDT;
+                        physics.omega += (totalTorque / physics.inertia) * subDT;
+                        
+                        physics.x += physics.vx * subDT;
+                        physics.y += physics.vy * subDT;
+                        physics.angle += physics.omega * subDT;
+                    }
+
+                    // Lower thresholds to avoid killing small accelerations in high-inertia sub-steps
+                    if (Math.abs(physics.vx) < 0.1 && Math.abs(totalFx) < 1) physics.vx = 0;
+                    if (Math.abs(physics.vy) < 0.1 && Math.abs(totalFy) < 1) physics.vy = 0;
+                    if (Math.abs(physics.omega) < 0.0001) physics.omega = 0;
                 }
 
                 if (step === SUBSTEPS - 1) {
-                    window.maxPvcPenetrationLastFrame = maxPvcPenetration; 
+                    window.maxPvcPenetrationLastFrame = maxPvcPenetration;
                     const fpad = (n, len) => n.toFixed(1).padStart(len, ' ');
                     const ipad = (n, len) => Math.round(n).toString().padStart(len, ' ');
 
@@ -903,7 +920,7 @@
                     craneGroup.setAttribute('transform', `rotate(${currentAngle}, 0, 0)`);
                     window.lastFinalComX = finalComX;
                     window.lastFinalComY = finalComY;
-                    
+
                     const degBodyDisplay = fpad(physics.angle * 180 / Math.PI, 6);
                     const omegaDisplay = fpad(physics.omega * 180 / Math.PI, 6);
                     const vxDisplay = fpad(physics.vx, 7);
@@ -913,7 +930,7 @@
                     const distDisplay = ipad(physics.x - 400, 6);
 
                     const telemetryText = `PVC Pen: ${penDisplay}px | Max ptVx: ${ptVxDisplay}px/s | Vx: ${vxDisplay} | Vy: ${vyDisplay} | ω: ${omegaDisplay}°/s | Angle: ${degBodyDisplay}° | Dist X: ${distDisplay}px`;
-                    
+
                     if (debugIndicator.textContent !== telemetryText) {
                         debugIndicator.textContent = telemetryText;
                         const textWidth = debugIndicator.getComputedTextLength();

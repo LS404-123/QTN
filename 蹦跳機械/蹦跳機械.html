@@ -605,7 +605,8 @@
             gravity: 5000,
             activePivotSite: null, // Persistent pivot ID
             pivotWorldX: 0,
-            pivotWorldY: 0
+            pivotWorldY: 0,
+            pivotVx: 0 // Velocity of the pivot point when sliding
         };
 
         slider.addEventListener('input', (e) => {
@@ -866,6 +867,7 @@
                         physics.activePivotSite = deepestWoodPoint.id;
                         physics.pivotWorldX = physics.x + deepestWoodPoint.wx;
                         physics.pivotWorldY = GROUND_Y;
+                        physics.pivotVx = 0; // Reset velocity on new pivot
                     }
                 }
 
@@ -884,6 +886,9 @@
                 let totalTorque = 0;
 
                 shapes.forEach(sh => {
+                    // Skip the pivot site if it exists - it will be handled as a constraint
+                    if (physics.activePivotSite !== null && sh.id === physics.activePivotSite) return;
+
                     if (sh.shape === 'point') {
                         const wx = cR * sh.dx - sR * sh.dy;
                         const wy = sR * sh.dx + cR * sh.dy;
@@ -897,7 +902,6 @@
                             if (forceY < 0) {
                                 totalFy += forceY;
                                 totalTorque += wx * forceY;
-                                // 修正視覺：如果是木腿點，我們已經有專門的紅點了，這裡只加 PVC 或其他的
                                 if (step === SUBSTEPS - 1 && sh.type !== 'WOOD') {
                                     currentFrameContacts.push({ x: physics.x + wx, y: worldY });
                                 }
@@ -949,38 +953,56 @@
                         const torquePivot = totalTorque - (currentActivePivot.wx * totalFy - currentActivePivot.wy * totalFx) + angularDamping * physics.inertia;
                         const alpha = torquePivot / iPivot;
 
-                        // --- 脫離判定 (Release Logic) ---
-                        // Fn = 地面需要提供的支撐力。
-                        // a_pivot.y = a_com.y + alpha*wx + omega^2*wy = 0 -> a_com.y = -alpha*wx - omega^2*wy
-                        // Fn + totalFy = m * a_com.y -> Fn = m * (-alpha*wx - omega^2*wy) - totalFy
-                        const Fn = physics.mass * (-alpha * currentActivePivot.wx - physics.omega * physics.omega * currentActivePivot.wy) - totalFy;
+                        // --- 脫離與滑動判定 (Release & Slip Logic) ---
+                        // Fn = ground support force needed to keep a_pivot.y = 0
+                        // Rx = horizontal force needed to keep a_pivot.x = 0
+                        const Fn = physics.mass * (physics.omega * physics.omega * currentActivePivot.wy - alpha * currentActivePivot.wx) - totalFy;
+                        const Rx = physics.mass * (alpha * currentActivePivot.wy + physics.omega * physics.omega * currentActivePivot.wx) - totalFx;
+                        
                         const worldY = physics.y + currentActivePivot.wy;
                         
-                        // 脫離條件：正在往上噴 (Fn 變負) 且 已經離開地面 (worldY < GROUND_Y)
-                        // 我們設定一個黏性門檻 (-1000)，讓它在真正想飛時才解鎖
+                        // 脫離條件：想要往上飛 (Fn 變負) 且 已經離開地面 (worldY < GROUND_Y)
                         if (Fn < -1000 && worldY < GROUND_Y - 0.5) {
                             physics.activePivotSite = null;
                             currentActivePivot = null;
                         }
 
                         if (currentActivePivot) {
+                            // --- 滑動處理 (Sliding Logic) ---
+                            const shPivot = shapes.find(s => s.id === physics.activePivotSite);
+                            const mu = MAT[shPivot.type].mu;
+                            const Fmax = mu * Math.abs(Fn);
+                            
+                            if (Math.abs(Rx) > Fmax) {
+                                // 發生滑動：更新支點速度
+                                // a_pivot = (F_friction - Rx_required) / mass
+                                const aSlip = (Math.sign(Rx) * Fmax - Rx) / physics.mass;
+                                physics.pivotVx += aSlip * subDT;
+                                window.lastPivotSlipVel = physics.pivotVx;
+                            } else {
+                                // 靜摩擦力足夠保持靜止，快速衰減速度
+                                physics.pivotVx *= 0.5; 
+                                if (Math.abs(physics.pivotVx) < 0.1) physics.pivotVx = 0;
+                                window.lastPivotSlipVel = physics.pivotVx;
+                            }
+
+                            // 應用滑動阻尼 (Damping for the slip velocity)
+                            physics.pivotVx *= 0.99; 
+
+                            physics.pivotWorldX += physics.pivotVx * subDT;
+
                             physics.omega += alpha * subDT;
                             physics.angle += physics.omega * subDT;
 
                             const newCR = Math.cos(physics.angle), newSR = Math.sin(physics.angle);
                             const newWx = newCR * currentActivePivot.localDx - newSR * currentActivePivot.localDy;
-                            const newWy = newSR * currentActivePivot.localDx + currentActivePivot.localDy * newCR; 
-                            // 修正：向量旋轉公式的正確性。
-                            // newWy = localDx * sinA + localDy * cosA;
                             const finalWy = newSR * currentActivePivot.localDx + newCR * currentActivePivot.localDy;
 
-                            // 關鍵：使用持久化的 pivotWorldX/Y，強制消除所有漂移
                             const prevX = physics.x;
                             const prevY = physics.y;
                             physics.x = physics.pivotWorldX - newWx;
                             physics.y = physics.pivotWorldY - finalWy;
 
-                            // 速度必須包含「旋轉」與「內部質心位移」兩種類型
                             physics.vx = (physics.x - prevX) / subDT;
                             physics.vy = (physics.y - prevY) / subDT;
 
@@ -1026,7 +1048,8 @@
                     const ptVxDisplay = fpad(maxPtVx, 6);
                     const distDisplay = ipad(physics.x - 400, 6);
 
-                    const telemetryText = `PVC Pen: ${penDisplay}px | Max ptVx: ${ptVxDisplay}px/s | Vx: ${vxDisplay} | Vy: ${vyDisplay} | ω: ${omegaDisplay}°/s | Angle: ${degBodyDisplay}° | Dist X: ${distDisplay}px`;
+                    const slipDisp = fpad(window.lastPivotSlipVel || 0, 6);
+                    const telemetryText = `PVC Pen: ${penDisplay}px | Slip: ${slipDisp}px/s | Vx: ${vxDisplay} | Vy: ${vyDisplay} | ω: ${omegaDisplay}°/s | Angle: ${degBodyDisplay}° | Dist X: ${distDisplay}px`;
 
                     if (debugIndicator.textContent !== telemetryText) {
                         debugIndicator.textContent = telemetryText;
@@ -1076,7 +1099,11 @@
                     const pt = currentFrameContacts[i];
                     dot.setAttribute('cx', pt.x);
                     dot.setAttribute('cy', 0); // Ground group is already at Y=800
-                    dot.setAttribute('style', 'display: block; opacity: 1.0;');
+                    
+                    // IF SLIDING, change color to Cyan/Blue
+                    const isSliding = Math.abs(window.lastPivotSlipVel || 0) > 0.1;
+                    dot.setAttribute('fill', isSliding ? '#2979ff' : '#ff1744');
+                    dot.setAttribute('style', `display: block; opacity: 1.0; ${isSliding ? 'filter: drop-shadow(0 0 3px #2979ff)' : ''}`);
                 } else {
                     dot.setAttribute('style', 'display: none;');
                 }

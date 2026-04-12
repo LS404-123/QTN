@@ -423,6 +423,7 @@
             physics.vx = 0;
             physics.vy = 0;
             physics.omega = 0;
+            physics.activePivotSite = null;
             physics.isPaused = true;
             window.lastFinalComX = 400;
             window.lastFinalComY = 300;
@@ -584,7 +585,10 @@
             omega: 0,
             mass: 1, // Will be updated dynamically
             inertia: 20000, // Will be updated dynamically
-            gravity: 5000
+            gravity: 5000,
+            activePivotSite: null, // Persistent pivot ID
+            pivotWorldX: 0,
+            pivotWorldY: 0
         };
 
         slider.addEventListener('input', (e) => {
@@ -752,8 +756,15 @@
                 const diaGlobalY = cranePivotY + diaLocalCy * cosA;
 
                 const totalMass = totalStaticMass + armMass + diaMass;
+                const prevFinalComX = step === 0 ? window.lastFinalComX : (staticCxSum + (cranePivotX - armLocalCy * Math.sin((currentAngle - (BASE_SPEED * speedMultiplier * subDT)) * Math.PI / 180)) * armMass + (cranePivotX - diaLocalCy * Math.sin((currentAngle - (BASE_SPEED * speedMultiplier * subDT)) * Math.PI / 180)) * diaMass) / totalMass;
+                const prevFinalComY = step === 0 ? window.lastFinalComY : (staticCySum + (cranePivotY + armLocalCy * Math.cos((currentAngle - (BASE_SPEED * speedMultiplier * subDT)) * Math.PI / 180)) * armMass + (cranePivotY + diaLocalCy * Math.cos((currentAngle - (BASE_SPEED * speedMultiplier * subDT)) * Math.PI / 180)) * diaMass) / totalMass;
+
                 const finalComX = (staticCxSum + armGlobalX * armMass + diaGlobalX * diaMass) / totalMass;
                 const finalComY = (staticCySum + armGlobalY * armMass + diaGlobalY * diaMass) / totalMass;
+
+                // --- 內部質心位移速度 (Relative COM Velocity) ---
+                const vRelX = (finalComX - prevFinalComX) / subDT;
+                const vRelY = (finalComY - prevFinalComY) / subDT;
 
                 physics.mass = totalMass;
                 let momentInertia = 0;
@@ -777,36 +788,66 @@
                 physics.inertia = momentInertia;
 
                 const shapes = [
-                    { type: 'PVC', shape: 'circle', cx: RING_CX - finalComX, cy: RING_CY - finalComY, r: RING_R_OUTER },
-                    { type: 'WOOD', shape: 'point', dx: brX - finalComX, dy: brY - finalComY },
-                    { type: 'WOOD', shape: 'point', dx: blX - finalComX, dy: blY - finalComY },
-                    { type: 'WOOD', shape: 'point', dx: 90 - finalComX, dy: 200 - finalComY },
-                    { type: 'WOOD', shape: 'point', dx: 700 - finalComX, dy: 200 - finalComY },
-                    { type: 'WOOD', shape: 'point', dx: 90 - finalComX, dy: 220 - finalComY },
-                    { type: 'WOOD', shape: 'point', dx: 700 - finalComX, dy: 220 - finalComY }
+                    { id: 'pvc_ring', type: 'PVC', shape: 'circle', cx: RING_CX - finalComX, cy: RING_CY - finalComY, r: RING_R_OUTER },
+                    { id: 'leg_br', type: 'WOOD', shape: 'point', dx: brX - finalComX, dy: brY - finalComY },
+                    { id: 'leg_bl', type: 'WOOD', shape: 'point', dx: blX - finalComX, dy: blY - finalComY },
+                    { id: 'body_tl', type: 'WOOD', shape: 'point', dx: 90 - finalComX, dy: 200 - finalComY },
+                    { id: 'body_tr', type: 'WOOD', shape: 'point', dx: 700 - finalComX, dy: 200 - finalComY },
+                    { id: 'body_bl', type: 'WOOD', shape: 'point', dx: 90 - finalComX, dy: 220 - finalComY },
+                    { id: 'body_br', type: 'WOOD', shape: 'point', dx: 700 - finalComX, dy: 220 - finalComY }
                 ];
 
                 const cR = Math.cos(physics.angle), sR = Math.sin(physics.angle);
                 const massScale = 55000;
-                
-                // --- 支點偵測 (Pivot Detection) ---
-                let activePivot = null;
-                let maxWoodPen = 0;
 
-                shapes.forEach(sh => {
+                // --- 支點偵測與維持 (Pivot Management) ---
+                let currentActivePivot = null;
+                let deepestWoodPoint = null;
+                let maxWoodPen = -1e9;
+
+                // 找尋當前最深的木質接觸點
+                shapes.forEach((sh) => {
                     if (sh.type === 'WOOD' && sh.shape === 'point') {
                         const wx = cR * sh.dx - sR * sh.dy;
                         const wy = sR * sh.dx + cR * sh.dy;
                         const worldY = physics.y + wy;
-                        if (worldY > GROUND_Y) {
-                            const penetration = worldY - GROUND_Y;
-                            if (penetration > maxWoodPen) {
-                                maxWoodPen = penetration;
-                                activePivot = { wx, wy, localDx: sh.dx, localDy: sh.dy, type: 'WOOD' };
-                            }
+                        const penetration = worldY - GROUND_Y;
+                        if (penetration > maxWoodPen) {
+                            maxWoodPen = penetration;
+                            deepestWoodPoint = { id: sh.id, wx, wy, localDx: sh.dx, localDy: sh.dy };
                         }
                     }
                 });
+
+                // 邏輯：
+                // 1. 如果完全沒碰地 (maxWoodPen < 0)，清除支點
+                if (maxWoodPen < -1.0 && physics.activePivotSite !== null) {
+                    physics.activePivotSite = null;
+                }
+
+                // 2. 如果碰地了，且 (原本沒支點 OR 發現了明顯更深的點)，則切換支點
+                if (maxWoodPen >= 0) {
+                    const isNew = (physics.activePivotSite === null);
+                    const isSignificantlyDeeper = (deepestWoodPoint && 
+                                                 physics.activePivotSite !== deepestWoodPoint.id && 
+                                                 maxWoodPen > 0.5); // 0.5px 緩衝防止抖動切換
+
+                    if (isNew || isSignificantlyDeeper) {
+                        physics.activePivotSite = deepestWoodPoint.id;
+                        physics.pivotWorldX = physics.x + deepestWoodPoint.wx;
+                        physics.pivotWorldY = GROUND_Y;
+                    }
+                }
+
+                // 3. 建立當前步控使用的支點資料
+                if (physics.activePivotSite !== null) {
+                    const sh = shapes.find(s => s.id === physics.activePivotSite);
+                    if (sh) {
+                        const wx = cR * sh.dx - sR * sh.dy;
+                        const wy = sR * sh.dx + cR * sh.dy;
+                        currentActivePivot = { wx, wy, localDx: sh.dx, localDy: sh.dy, type: 'WOOD' };
+                    }
+                }
 
                 let totalFx = 0;
                 let totalFy = physics.mass * physics.gravity;
@@ -826,7 +867,8 @@
                             if (forceY < 0) {
                                 totalFy += forceY;
                                 totalTorque += wx * forceY;
-                                if (step === SUBSTEPS - 1) {
+                                // 修正視覺：如果是木腿點，我們已經有專門的紅點了，這裡只加 PVC 或其他的
+                                if (step === SUBSTEPS - 1 && sh.type !== 'WOOD') {
                                     currentFrameContacts.push({ x: physics.x + wx, y: worldY });
                                 }
                                 const ptVx = physics.vx - physics.omega * wy;
@@ -867,38 +909,63 @@
                 });
 
                 if (!physics.isPaused) {
-                    const angularDamping = -1.0 * physics.omega; // Slightly increase damping for stability
-                    
-                    if (activePivot) {
-                        const pivotWorldX = physics.x + activePivot.wx;
-                        // Force the pivot to be exactly at ground level to prevent visual penetration
-                        const pivotWorldY = GROUND_Y; 
+                    const angularDamping = -0.05 * physics.omega; // Reduced damping significantly
 
-                        const rSq = activePivot.wx * activePivot.wx + activePivot.wy * activePivot.wy;
+                    if (currentActivePivot) {
+                        const rSq = currentActivePivot.wx * currentActivePivot.wx + currentActivePivot.wy * currentActivePivot.wy;
                         const iPivot = physics.inertia + physics.mass * rSq;
-                        
+
                         // τ_pivot = τ_com - r_p x F_total
-                        const torquePivot = totalTorque - (activePivot.wx * totalFy - activePivot.wy * totalFx) + angularDamping * physics.inertia;
-                        
+                        const torquePivot = totalTorque - (currentActivePivot.wx * totalFy - currentActivePivot.wy * totalFx) + angularDamping * physics.inertia;
                         const alpha = torquePivot / iPivot;
-                        physics.omega += alpha * subDT;
-                        physics.angle += physics.omega * subDT;
 
-                        // Use the pivot coordinates stored during detection
-                        const newCR = Math.cos(physics.angle), newSR = Math.sin(physics.angle);
-                        const newWx = newCR * activePivot.localDx - newSR * activePivot.localDy;
-                        const newWy = newSR * activePivot.localDx + newCR * activePivot.localDy;
-                        physics.x = pivotWorldX - newWx;
-                        physics.y = pivotWorldY - newWy;
+                        // --- 脫離判定 (Release Logic) ---
+                        // Fn = 地面需要提供的支撐力。
+                        // a_pivot.y = a_com.y + alpha*wx + omega^2*wy = 0 -> a_com.y = -alpha*wx - omega^2*wy
+                        // Fn + totalFy = m * a_com.y -> Fn = m * (-alpha*wx - omega^2*wy) - totalFy
+                        const Fn = physics.mass * (-alpha * currentActivePivot.wx - physics.omega * physics.omega * currentActivePivot.wy) - totalFy;
+                        const worldY = physics.y + currentActivePivot.wy;
+                        
+                        // 脫離條件：正在往上噴 (Fn 變負) 且 已經離開地面 (worldY < GROUND_Y)
+                        // 我們設定一個黏性門檻 (-1000)，讓它在真正想飛時才解鎖
+                        if (Fn < -1000 && worldY < GROUND_Y - 0.5) {
+                            physics.activePivotSite = null;
+                            currentActivePivot = null;
+                        }
 
-                        physics.vx = physics.omega * newWy;
-                        physics.vy = -physics.omega * newWx;
-                    } else {
+                        if (currentActivePivot) {
+                            physics.omega += alpha * subDT;
+                            physics.angle += physics.omega * subDT;
+
+                            const newCR = Math.cos(physics.angle), newSR = Math.sin(physics.angle);
+                            const newWx = newCR * currentActivePivot.localDx - newSR * currentActivePivot.localDy;
+                            const newWy = newSR * currentActivePivot.localDx + currentActivePivot.localDy * newCR; 
+                            // 修正：向量旋轉公式的正確性。
+                            // newWy = localDx * sinA + localDy * cosA;
+                            const finalWy = newSR * currentActivePivot.localDx + newCR * currentActivePivot.localDy;
+
+                            // 關鍵：使用持久化的 pivotWorldX/Y，強制消除所有漂移
+                            const prevX = physics.x;
+                            const prevY = physics.y;
+                            physics.x = physics.pivotWorldX - newWx;
+                            physics.y = physics.pivotWorldY - finalWy;
+
+                            // 速度必須包含「旋轉」與「內部質心位移」兩種類型
+                            physics.vx = (physics.x - prevX) / subDT;
+                            physics.vy = (physics.y - prevY) / subDT;
+
+                            if (step === SUBSTEPS - 1) {
+                                currentFrameContacts.push({ x: physics.pivotWorldX, y: GROUND_Y });
+                            }
+                        }
+                    }
+
+                    if (!currentActivePivot) {
                         totalTorque += angularDamping * physics.inertia;
                         physics.vx += (totalFx / physics.mass) * subDT;
                         physics.vy += (totalFy / physics.mass) * subDT;
                         physics.omega += (totalTorque / physics.inertia) * subDT;
-                        
+
                         physics.x += physics.vx * subDT;
                         physics.y += physics.vy * subDT;
                         physics.angle += physics.omega * subDT;

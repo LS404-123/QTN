@@ -75,6 +75,8 @@
             flex-direction: column;
             gap: 15px;
             font-size: 0.85em;
+            width: 320px;
+            /* Added fixed width for settings panel */
         }
 
         .settings-group {
@@ -94,15 +96,24 @@
         }
 
         .setting-row {
-            display: flex;
+            display: grid;
+            grid-template-columns: 140px 1fr 60px;
             align-items: center;
-            gap: 10px;
+            gap: 15px;
             margin-bottom: 8px;
         }
 
         .setting-row label {
-            width: 100px;
             font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .setting-row span {
+            text-align: right;
+            font-family: monospace;
+            font-size: 1.1em;
+            color: #222;
+            font-weight: bold;
         }
 
         .button-row {
@@ -120,6 +131,141 @@
             border-radius: 5px;
             border: 1px solid #ccc;
             background-color: #e0e0e0;
+            transition: all 0.2s;
+        }
+
+        .button-row button:hover {
+            background-color: #d0d0d0;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar {
+            width: 450px;
+            padding: 20px;
+            background-color: #f1f3f5;
+            overflow-y: auto;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            box-sizing: border-box;
+            border-left: 1px solid #ddd;
+            box-shadow: -5px 0 15px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Adjust internal panels to not have their own fixed widths that might conflict */
+        .settings-panel {
+            background-color: #f1f3f5;
+            padding: 0;
+            /* Let sidebar handle padding */
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            font-size: 0.85em;
+        }
+
+        .control-panel {
+            padding: 0;
+            /* Let sidebar handle padding */
+            padding-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            border-bottom: 2px solid #ddd;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(8px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-content {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 20px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+            transform: scale(0.9);
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            position: relative;
+        }
+
+        .modal-overlay.active .modal-content {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: #222;
+            font-size: 1.5em;
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 1.5em;
+            cursor: pointer;
+            color: #999;
+            transition: color 0.2s;
+        }
+
+        .close-modal:hover {
+            color: #f44336;
+        }
+
+        .modal-body {
+            line-height: 1.6;
+            color: #444;
+        }
+
+        .param-item {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .param-item:last-child {
+            border-bottom: none;
+        }
+
+        .param-name {
+            font-weight: bold;
+            color: #fbc02d;
+            font-size: 1.1em;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .info-btn:hover {
+            transform: scale(1.2);
+            transition: transform 0.2s;
         }
     </style>
 </head>
@@ -241,7 +387,8 @@
                             font-weight="bold">COM</text>
                     </g>
                     <!-- STABLE COM MARKER (Yellow Dot) -->
-                    <circle id="stable-com-dot" r="6" fill="#ffeb3b" stroke="#fbc02d" stroke-width="2" style="display: none;" />
+                    <circle id="stable-com-dot" r="6" fill="#ffeb3b" stroke="#fbc02d" stroke-width="2"
+                        style="display: none;" />
                 </g>
 
                 <!-- Error Overlay -->
@@ -259,123 +406,134 @@
                         0.0px</text>
                 </g>
                 <!-- Fixed Camera Indicator (Red Dot at Center) -->
-                <circle id="camera-fixed-dot" r="5" fill="#ff1744" style="filter: drop-shadow(0 0 5px rgba(255,23,68,0.5));" />
+                <circle id="camera-fixed-dot" r="5" fill="#ff1744"
+                    style="filter: drop-shadow(0 0 5px rgba(255,23,68,0.5));" />
             </svg>
         </div>
 
         <div class="sidebar">
             <div class="control-panel">
                 <div class="setting-row">
-                    <label>Crane Speed</label>
+                    <label>旋轉速度 (Crane)</label>
                     <input type="range" id="speedSlider" min="0.2" max="5" step="0.2" value="1">
                     <span id="speedDisplay">1.0x</span>
                 </div>
                 <div class="setting-row">
-                    <label>Ring X</label>
+                    <label>圓環位置 (Ring X)</label>
                     <input type="range" id="ringXSlider" min="100" max="260" step="1" value="150">
                     <span id="ringXDisplay">150</span>
                 </div>
                 <div class="setting-row">
-                    <label>Drop Tilt</label>
+                    <label>投放角度 (Tilt)</label>
                     <input type="range" id="tiltSlider" min="-45" max="45" step="1" value="0">
                     <span id="tiltDisplay">0°</span>
                 </div>
                 <div class="setting-row" id="camXRow">
-                    <label>Camera X</label>
+                    <label>相機 X (Cam X)</label>
                     <input type="range" id="camXSlider" min="0" max="2000" step="5" value="200">
                     <span id="camXDisplay">200</span>
                 </div>
                 <div class="setting-row">
-                    <label>POV Mode</label>
-                    <select id="povSelect" style="flex:1">
-                        <option value="fixed">Fixed View (固定場景)</option>
-                        <option value="world">World centric (水平追蹤)</option>
-                        <option value="robot">Robot centric (重心鎖定)</option>
+                    <label>視角模式 (POV)</label>
+                    <select id="povSelect" style="grid-column: span 2;">
+                        <option value="fixed">固定視角 (Fixed)</option>
+                        <option value="world">世界中心 (World)</option>
+                        <option value="robot">機器人中心 (Robot)</option>
                     </select>
                 </div>
                 <div class="button-row">
-                    <button id="motorToggle">Stop Motor</button>
-                    <button id="resetBtn">Prepare Space</button>
+                    <button id="motorToggle">停止電機</button>
+                    <button id="resetBtn">重置空間</button>
                 </div>
                 <div class="button-row" style="gap: 5px;">
                     <button id="quickDropBtn"
-                        style="background-color: #81c784; color: white; border: none; font-weight: bold; flex: 2;">Quick
-                        Drop (一鍵投放)</button>
-                    <button id="pauseToggle" style="flex: 1;">Hold</button>
+                        style="background-color: #81c784; color: white; border: none; font-weight: bold; flex: 2;">一鍵投放
+                        (Quick Drop)</button>
+                    <button id="pauseToggle" style="flex: 1;">暫停</button>
                 </div>
             </div>
 
             <div class="settings-panel">
                 <div class="settings-group">
-                    <h3>PVC (Front Ring)</h3>
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; margin-bottom: 10px;">
+                        <h3 style="margin: 0; border: none; padding: 0;">PVC (前圓環)</h3>
+                        <button class="info-btn" data-info="pvc"
+                            style="background: none; border: none; color: #fbc02d; cursor: pointer; font-size: 1.2em; padding: 0;">ⓘ</button>
+                    </div>
                     <div class="setting-row">
-                        <label>Stiffness (K)</label>
+                        <label>勁度係數 (K)</label>
                         <input type="range" id="kPvc" min="500" max="10000" step="100" value="3000">
                         <span id="kPvcVal">3000</span>
                     </div>
                     <div class="setting-row">
-                        <label>Damping (D)</label>
+                        <label>阻尼係數 (D)</label>
                         <input type="range" id="dPvc" min="0" max="200" step="5" value="60">
                         <span id="dPvcVal">60</span>
                     </div>
                     <div class="setting-row">
-                        <label>Friction (μ)</label>
+                        <label>摩擦係數 (μ)</label>
                         <input type="range" id="muPvc" min="0" max="1" step="0.05" value="0.3">
                         <span id="muPvcVal">0.3</span>
                     </div>
                 </div>
 
                 <div class="settings-group">
-                    <h3>WOOD (Back Leg)</h3>
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; margin-bottom: 10px;">
+                        <h3 style="margin: 0; border: none; padding: 0;">木質腳架 (Back Leg)</h3>
+                        <button class="info-btn" data-info="wood"
+                            style="background: none; border: none; color: #fbc02d; cursor: pointer; font-size: 1.2em; padding: 0;">ⓘ</button>
+                    </div>
                     <div class="setting-row">
-                        <label>Stiffness (K)</label>
+                        <label>勁度係數 (K)</label>
                         <input type="range" id="kWood" min="5000" max="50000" step="1000" value="20000">
                         <span id="kWoodVal">20000</span>
                     </div>
                     <div class="setting-row">
-                        <label>Damping (D)</label>
+                        <label>阻尼係數 (D)</label>
                         <input type="range" id="dWood" min="0" max="1000" step="10" value="300">
                         <span id="dWoodVal">300</span>
                     </div>
                     <div class="setting-row">
-                        <label>Friction (μ)</label>
+                        <label>摩擦係數 (μ)</label>
                         <input type="range" id="muWood" min="0" max="1" step="0.05" value="0.4">
                         <span id="muWoodVal">0.4</span>
                     </div>
                 </div>
 
                 <div class="settings-group">
-                    <h3>Time Control (時間機器)</h3>
+                    <h3>時間控制 (Time)</h3>
                     <div class="setting-row">
-                        <label>Time Scale</label>
+                        <label>時間縮放</label>
                         <input type="range" id="timeScaleSlider" min="0.05" max="1" step="0.05" value="1">
                         <span id="timeScaleVal">1.0x</span>
                     </div>
                     <div class="setting-row">
-                        <label>Timeline</label>
-                        <input type="range" id="timelineSlider" min="0" max="0" step="1" value="0" disabled>
+                        <label>時間顯示</label>
+                        <input type="range" id="timelineSlider" min="0" max="0" step="1" value="0" disabled
+                            style="grid-column: span 2;">
                     </div>
                     <div class="button-row">
-                        <span id="historyInfo" style="font-size: 0.8em; color: #777;">Recording: 0s</span>
-                    </div>
-                </div>
-
-                <div class="settings-group">
-                    <h3>Global Physics</h3>
-                    <div class="setting-row">
-                        <label>Gravity</label>
-                        <input type="range" id="gVal" min="0" max="15000" step="500" value="5000">
-                        <span id="gDisplay">5000</span>
-                    </div>
-                    <div class="setting-row" style="flex:1">
-                        <label>Friction Gain</label>
-                        <input type="range" id="fGain" min="1" max="2000" step="1" value="100">
-                        <span id="fGainVal">100</span>
+                        <span id="historyInfo" style="font-size: 0.8em; color: #777;">錄製中: 0s</span>
                     </div>
                 </div>
                 <button id="resetDefaultsBtn"
-                    style="margin-top: 10px; padding: 12px; background-color: #f44336; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s;">Reset
-                    All to Defaults (重置所有參數)</button>
+                    style="margin-top: 10px; padding: 12px; background-color: #f44336; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s;">全部重置為預設值
+                    (Reset All)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Physics Explanation Modal -->
+    <div id="infoModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">參數說明</h2>
+                <button id="closeModal" class="close-modal">&times;</button>
+            </div>
+            <div id="modalBody" class="modal-body">
+                <!-- Content will be injected by JS -->
             </div>
         </div>
     </div>
@@ -425,7 +583,7 @@
 
         motorBtn.addEventListener('click', () => {
             motorRunning = !motorRunning;
-            motorBtn.textContent = motorRunning ? 'Stop Motor' : 'Start Motor';
+            motorBtn.textContent = motorRunning ? '停止電機' : '啟動電機';
             motorBtn.style.backgroundColor = motorRunning ? '#e0e0e0' : '#ffcdd2';
         });
 
@@ -440,7 +598,7 @@
             physics.isPaused = true;
             window.lastFinalComX = 400;
             window.lastFinalComY = 300;
-            pauseToggle.textContent = 'Resume';
+            pauseToggle.textContent = '恢復';
             pauseToggle.style.backgroundColor = '#ffecb3';
         }
 
@@ -449,13 +607,13 @@
         quickDropBtn.addEventListener('click', () => {
             prepareRobot();
             physics.isPaused = false;
-            pauseToggle.textContent = 'Hold';
+            pauseToggle.textContent = '暫停';
             pauseToggle.style.backgroundColor = '';
         });
 
         pauseToggle.addEventListener('click', () => {
             physics.isPaused = !physics.isPaused;
-            pauseToggle.textContent = physics.isPaused ? 'Resume' : 'Hold';
+            pauseToggle.textContent = physics.isPaused ? '恢復' : '暫停';
             pauseToggle.style.backgroundColor = physics.isPaused ? '#ffecb3' : '';
         });
 
@@ -484,6 +642,56 @@
             timeScaleVal.textContent = timeScale.toFixed(2) + 'x';
         });
 
+        // --- Modal Logic ---
+        const infoModal = document.getElementById('infoModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalBody = document.getElementById('modalBody');
+        const closeModal = document.getElementById('closeModal');
+        const infoBtns = document.querySelectorAll('.info-btn');
+
+        const infoContent = {
+            pvc: {
+                title: 'PVC 前圓環參數說明',
+                params: [
+                    { name: '勁度係數 (Stiffness K)', desc: '模擬材料受壓時產生的反彈力。數值越高，圓環越硬，跳動越劇烈。' },
+                    { name: '阻尼係數 (Damping D)', desc: '負責消耗動能。數值越高，圓環的震盪消失越快，系統越穩定。' },
+                    { name: '摩擦係數 (Friction μ)', desc: '決定圓環與地面接觸時的抓地力。數值越高，越不容易發生滑動。' }
+                ]
+            },
+            wood: {
+                title: '木質腳架參數說明',
+                params: [
+                    { name: '勁度係數 (Stiffness K)', desc: '後腿結構的剛性。由於是木質，通常比 PVC 高得多（較硬）。' },
+                    { name: '阻尼係數 (Damping D)', desc: '支撐結構的能量損耗。幫助吸收落地時的衝擊感。' },
+                    { name: '摩擦係數 (Friction μ)', desc: '後腿末端支點與地面的摩擦力，是推進力的關鍵。' }
+                ]
+            },
+        };
+
+        infoBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const type = btn.getAttribute('data-info');
+                const content = infoContent[type];
+                modalTitle.textContent = content.title;
+                modalBody.innerHTML = content.params.map(p => `
+                    <div class="param-item">
+                        <span class="param-name">${p.name}</span>
+                        <div class="param-desc">${p.desc}</div>
+                    </div>
+                `).join('');
+                infoModal.classList.add('active');
+            });
+        });
+
+        const hideModal = () => infoModal.classList.remove('active');
+        closeModal.addEventListener('click', hideModal);
+        infoModal.addEventListener('click', (e) => {
+            if (e.target === infoModal) hideModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && infoModal.classList.contains('active')) hideModal();
+        });
+
         const history = [];
         const MAX_HISTORY = 3000; // 50 seconds at 60fps
         let isScrubbing = false;
@@ -491,7 +699,7 @@
         timelineSlider.addEventListener('input', () => {
             isScrubbing = true;
             physics.isPaused = true;
-            pauseToggle.textContent = 'Resume';
+            pauseToggle.textContent = '恢復';
             pauseToggle.style.backgroundColor = '#ffecb3';
 
             const index = parseInt(timelineSlider.value);
@@ -519,7 +727,7 @@
             timelineSlider.disabled = false;
             timelineSlider.max = history.length - 1;
             if (!isScrubbing) timelineSlider.value = history.length - 1;
-            historyInfo.textContent = `History: ${(history.length / 60).toFixed(1)}s`;
+            historyInfo.textContent = `歷史紀錄: ${(history.length / 60).toFixed(1)}s`;
         }
 
         function applyState(s) {
@@ -564,7 +772,7 @@
                 }
             }
         }
-        
+
         // Initial ground render
         updateGround(400);
 
@@ -587,7 +795,7 @@
 
             // Reset motor state if needed
             motorRunning = true;
-            motorBtn.textContent = 'Stop Motor';
+            motorBtn.textContent = '停止電機';
             motorBtn.style.backgroundColor = '#e0e0e0';
         });
 
@@ -614,16 +822,13 @@
             display.textContent = speedMultiplier.toFixed(1) + 'x';
         });
 
-        // Physics Tuning UI
         const settings = {
             kPvc: document.getElementById('kPvc'),
             dPvc: document.getElementById('dPvc'),
             muPvc: document.getElementById('muPvc'),
             kWood: document.getElementById('kWood'),
             dWood: document.getElementById('dWood'),
-            muWood: document.getElementById('muWood'),
-            gravity: document.getElementById('gVal'),
-            fGain: document.getElementById('fGain')
+            muWood: document.getElementById('muWood')
         };
 
         Object.keys(settings).forEach(id => {
@@ -645,6 +850,12 @@
             physics.vy = 0;
             physics.omega = 0;
             physics.isPaused = true;
+        });
+
+        ringXSlider.addEventListener('input', (e) => {
+            RING_CX = parseFloat(e.target.value);
+            ringXDisplay.textContent = e.target.value;
+            initRingSVG();
         });
 
         camXSlider.addEventListener('input', (e) => {
@@ -764,8 +975,8 @@
                 'PVC': { K: parseFloat(settings.kPvc.value), D: parseFloat(settings.dPvc.value), mu: parseFloat(settings.muPvc.value) },
                 'WOOD': { K: parseFloat(settings.kWood.value), D: parseFloat(settings.dWood.value), mu: parseFloat(settings.muWood.value) }
             };
-            physics.gravity = parseFloat(settings.gravity.value);
-            const frictionGain = parseFloat(settings.fGain.value);
+            physics.gravity = settings.gravity ? parseFloat(settings.gravity.value) : 5000;
+            const frictionGain = settings.fGain ? parseFloat(settings.fGain.value) : 100;
 
             const SUBSTEPS = 15;
             const subDT = deltaTime / SUBSTEPS;
@@ -859,9 +1070,9 @@
                 // 2. 如果碰地了，且 (原本沒支點 OR 發現了明顯更深的點)，則切換支點
                 if (maxWoodPen >= 0) {
                     const isNew = (physics.activePivotSite === null);
-                    const isSignificantlyDeeper = (deepestWoodPoint && 
-                                                 physics.activePivotSite !== deepestWoodPoint.id && 
-                                                 maxWoodPen > 0.5); // 0.5px 緩衝防止抖動切換
+                    const isSignificantlyDeeper = (deepestWoodPoint &&
+                        physics.activePivotSite !== deepestWoodPoint.id &&
+                        maxWoodPen > 0.5); // 0.5px 緩衝防止抖動切換
 
                     if (isNew || isSignificantlyDeeper) {
                         physics.activePivotSite = deepestWoodPoint.id;
@@ -958,9 +1169,9 @@
                         // Rx = horizontal force needed to keep a_pivot.x = 0
                         const Fn = physics.mass * (physics.omega * physics.omega * currentActivePivot.wy - alpha * currentActivePivot.wx) - totalFy;
                         const Rx = physics.mass * (alpha * currentActivePivot.wy + physics.omega * physics.omega * currentActivePivot.wx) - totalFx;
-                        
+
                         const worldY = physics.y + currentActivePivot.wy;
-                        
+
                         // 脫離條件：想要往上飛 (Fn 變負) 且 已經離開地面 (worldY < GROUND_Y)
                         if (Fn < -1000 && worldY < GROUND_Y - 0.5) {
                             physics.activePivotSite = null;
@@ -972,7 +1183,7 @@
                             const shPivot = shapes.find(s => s.id === physics.activePivotSite);
                             const mu = MAT[shPivot.type].mu;
                             const Fmax = mu * Math.abs(Fn);
-                            
+
                             if (Math.abs(Rx) > Fmax) {
                                 // 發生滑動：更新支點速度
                                 // a_pivot = (F_friction - Rx_required) / mass
@@ -981,13 +1192,13 @@
                                 window.lastPivotSlipVel = physics.pivotVx;
                             } else {
                                 // 靜摩擦力足夠保持靜止，快速衰減速度
-                                physics.pivotVx *= 0.5; 
+                                physics.pivotVx *= 0.5;
                                 if (Math.abs(physics.pivotVx) < 0.1) physics.pivotVx = 0;
                                 window.lastPivotSlipVel = physics.pivotVx;
                             }
 
                             // 應用滑動阻尼 (Damping for the slip velocity)
-                            physics.pivotVx *= 0.99; 
+                            physics.pivotVx *= 0.99;
 
                             physics.pivotWorldX += physics.pivotVx * subDT;
 
@@ -1062,7 +1273,7 @@
                     const totalMass = totalStaticMass + armMass + diaMass;
                     const sComX = (staticCxSum + cranePivotX * armMass + cranePivotX * diaMass) / totalMass;
                     const sComY = (staticCySum + cranePivotY * armMass + cranePivotY * diaMass) / totalMass;
-                    
+
                     if (stableComDot) {
                         stableComDot.style.display = 'block';
                         // Position in the initial robot frame
@@ -1099,7 +1310,7 @@
                     const pt = currentFrameContacts[i];
                     dot.setAttribute('cx', pt.x);
                     dot.setAttribute('cy', 0); // Ground group is already at Y=800
-                    
+
                     // IF SLIDING, change color to Cyan/Blue
                     const isSliding = Math.abs(window.lastPivotSlipVel || 0) > 0.1;
                     dot.setAttribute('fill', isSliding ? '#2979ff' : '#ff1744');

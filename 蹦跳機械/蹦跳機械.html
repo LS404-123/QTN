@@ -240,6 +240,8 @@
                         <text x="14" y="-14" fill="#e91e63" font-size="14" font-family="sans-serif"
                             font-weight="bold">COM</text>
                     </g>
+                    <!-- STABLE COM MARKER (Yellow Dot) -->
+                    <circle id="stable-com-dot" r="6" fill="#ffeb3b" stroke="#fbc02d" stroke-width="2" style="display: none;" />
                 </g>
 
                 <!-- Error Overlay -->
@@ -256,6 +258,8 @@
                     <text id="debug-indicator" x="10" y="0" fill="#222" font-size="14" font-family="monospace">PVC Pen:
                         0.0px</text>
                 </g>
+                <!-- Fixed Camera Indicator (Red Dot at Center) -->
+                <circle id="camera-fixed-dot" r="5" fill="#ff1744" style="filter: drop-shadow(0 0 5px rgba(255,23,68,0.5));" />
             </svg>
         </div>
 
@@ -276,11 +280,17 @@
                     <input type="range" id="tiltSlider" min="-45" max="45" step="1" value="0">
                     <span id="tiltDisplay">0°</span>
                 </div>
+                <div class="setting-row" id="camXRow">
+                    <label>Camera X</label>
+                    <input type="range" id="camXSlider" min="0" max="2000" step="5" value="200">
+                    <span id="camXDisplay">200</span>
+                </div>
                 <div class="setting-row">
                     <label>POV Mode</label>
                     <select id="povSelect" style="flex:1">
-                        <option value="world">World centric</option>
-                        <option value="robot">Robot centric</option>
+                        <option value="fixed">Fixed View (固定場景)</option>
+                        <option value="world">World centric (水平追蹤)</option>
+                        <option value="robot">Robot centric (重心鎖定)</option>
                     </select>
                 </div>
                 <div class="button-row">
@@ -377,6 +387,8 @@
         const ringXDisplay = document.getElementById('ringXDisplay');
         const tiltSlider = document.getElementById('tiltSlider');
         const tiltDisplay = document.getElementById('tiltDisplay');
+        const camXSlider = document.getElementById('camXSlider');
+        const camXDisplay = document.getElementById('camXDisplay');
         const povSelect = document.getElementById('povSelect');
         const craneGroup = document.getElementById('crane-spin-group');
         const robotWrapper = document.getElementById('robot-wrapper');
@@ -389,6 +401,7 @@
         const mainSvg = document.getElementById('main-svg');
         const leftRingGroup = document.getElementById('left-ring');
         const contactPointsGroup = document.getElementById('contact-points-group');
+        const stableComDot = document.getElementById('stable-com-dot');
 
         // Create a pool of contact point dots
         const contactDots = [];
@@ -456,7 +469,8 @@
             speedSlider: 1,
             ringXSlider: 150,
             tiltSlider: 0,
-            povSelect: 'world',
+            camXSlider: 200,
+            povSelect: 'fixed',
             kPvc: 3000, dPvc: 60, muPvc: 0.3,
             kWood: 20000, dWood: 300, muWood: 0.4,
             gVal: 5000,
@@ -550,6 +564,9 @@
                 }
             }
         }
+        
+        // Initial ground render
+        updateGround(400);
 
         resetDefaultsBtn.addEventListener('click', () => {
             Object.keys(DEFAULTS).forEach(id => {
@@ -628,6 +645,19 @@
             physics.omega = 0;
             physics.isPaused = true;
         });
+
+        camXSlider.addEventListener('input', (e) => {
+            camXDisplay.textContent = e.target.value;
+        });
+
+        function updateSliderVisibility() {
+            const camXRow = document.getElementById('camXRow');
+            if (camXRow) {
+                camXRow.style.display = (povSelect.value === 'fixed') ? 'flex' : 'none';
+            }
+        }
+        povSelect.addEventListener('change', updateSliderVisibility);
+        updateSliderVisibility();
 
         const comMarker = document.getElementById('com-marker');
         const DENSITY_WOOD = 0.6;
@@ -1004,6 +1034,18 @@
                         const bgRect = document.querySelector('#debug-indicator-group rect');
                         if (bgRect) bgRect.setAttribute('width', (textWidth + 30).toString());
                     }
+
+                    // --- Stable COM Calculation for Visualization ---
+                    const totalMass = totalStaticMass + armMass + diaMass;
+                    const sComX = (staticCxSum + cranePivotX * armMass + cranePivotX * diaMass) / totalMass;
+                    const sComY = (staticCySum + cranePivotY * armMass + cranePivotY * diaMass) / totalMass;
+                    
+                    if (stableComDot) {
+                        stableComDot.style.display = 'block';
+                        // Position in the initial robot frame
+                        stableComDot.setAttribute('cx', sComX);
+                        stableComDot.setAttribute('cy', sComY);
+                    }
                 }
             }
 
@@ -1048,8 +1090,26 @@
             mainSvg.setAttribute('viewBox', `0 0 ${virtualW} ${virtualH}`);
 
             const groundGroup = document.getElementById('ground');
+            const fixedDot = document.getElementById('camera-fixed-dot');
+            if (fixedDot) {
+                fixedDot.setAttribute('cx', SCREEN_CENTER_X);
+                fixedDot.setAttribute('cy', virtualH / 2);
+            }
 
-            if (pov === 'world') {
+            if (pov === 'fixed') {
+                // Fixed Camera: Uses manual Camera X slider
+                const camX = parseFloat(camXSlider.value);
+                const camY = 450;
+                const camOffsetX = SCREEN_CENTER_X - camX;
+                const camOffsetY = (virtualH / 2) - camY;
+
+                groundGroup.setAttribute('transform', `translate(${camOffsetX}, ${GROUND_Y + camOffsetY})`);
+                robotWrapper.setAttribute('transform', `
+                    translate(${SCREEN_CENTER_X + (physics.x - camX)}, ${physics.y + camOffsetY})
+                    rotate(${degBody})
+                    translate(${-window.lastFinalComX}, ${-window.lastFinalComY})
+                `);
+            } else if (pov === 'world') {
                 // Camera tracks robot horizontally, ground scrolls
                 const camOffsetX = SCREEN_CENTER_X - physics.x;
                 groundGroup.setAttribute('transform', `translate(${camOffsetX}, ${GROUND_Y})`);

@@ -718,6 +718,11 @@
                 angle: physics.angle, omega: physics.omega,
                 currentAngle: currentAngle,
                 pvcPen: window.maxPvcPenetrationLastFrame || 0,
+                // Pivot state
+                activePivotSite: physics.activePivotSite,
+                pivotWorldX: physics.pivotWorldX,
+                pivotWorldY: physics.pivotWorldY,
+                pivotVx: physics.pivotVx,
                 // Also save dynamic COM to avoid jitter
                 lastFinalComX: window.lastFinalComX,
                 lastFinalComY: window.lastFinalComY
@@ -735,6 +740,12 @@
             physics.vx = s.vx; physics.vy = s.vy;
             physics.angle = s.angle; physics.omega = s.omega;
             currentAngle = s.currentAngle;
+            // Restore pivot state
+            physics.activePivotSite = s.activePivotSite || null;
+            physics.pivotWorldX = s.pivotWorldX || 0;
+            physics.pivotWorldY = s.pivotWorldY || 0;
+            physics.pivotVx = s.pivotVx || 0;
+
             window.lastFinalComX = s.lastFinalComX;
             window.lastFinalComY = s.lastFinalComY;
         }

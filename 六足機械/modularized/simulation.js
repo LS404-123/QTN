@@ -100,7 +100,7 @@ function updateCrankPosition() {
     const customGearboxScale = targetDistPx / 12.5; // distance from hole (cy=12.5) to bottom (cy=25)
 
     // Bottom tab is at x=18.5, crank hole is at x=25 (difference = 6.5)
-    C_crank.x = gearboxShiftX + (6.5 * customGearboxScale / scale);
+    C_crank.x = gearboxShiftX;
     C_crank.y = -bodyYOffset + 2 + (12.5 * customGearboxScale / scale);
 }
 
@@ -852,9 +852,9 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 
         // --- DRAW MOTOR (Below Gearbox) ---
         // Motor is translated by (52, 2.5) relative to gearbox (0,0)
-        // Since gearbox is translated by (-18.5, -27), motor is at (-18.5 + 52, -27 + 2.5) = (33.5, -24.5)
+        // Since gearbox is translated by (-25.0, -27), motor is at (-25.0 + 52, -27 + 2.5) = (27, -24.5)
         robotCtx.save();
-        robotCtx.translate(33.5, -24.5);
+        robotCtx.translate(27.0, -24.5);
 
         // Define motor sectional fills (using manual rects to match SVG look)
         robotCtx.fillStyle = motorLightGrey;
@@ -920,7 +920,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 
         // --- DRAW GEARBOX (On Top) ---
         robotCtx.save();
-        robotCtx.translate(-18.5, -27);
+        robotCtx.translate(-25.0, -27);
         robotCtx.fillStyle = gearboxFill;
         robotCtx.strokeStyle = gearboxStroke;
         robotCtx.lineWidth = 1.5 / customGearboxScale;
@@ -1052,7 +1052,7 @@ function animate() {
 
     if (isPlaying) {
         // 確保參數化 SVG 在最初幾幀能成功覆蓋 svgs.js 的非同步加載結果
-        if (globalSimTime < 1.0) updateLegSVGPath(); 
+        if (globalSimTime < 1.0) updateLegSVGPath();
 
         theta += simSpeed;
         globalSimTime += dt;
@@ -1255,6 +1255,76 @@ setupSlider('gearboxShiftSlider', 'gearboxShiftVal', (v) => {
     paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
     triggerUpdate();
 });
+
+setupSlider('sSlider', 'sVal', (v) => {
+    S = v;
+    Pf.x = -S;
+    Pr.x = S;
+    paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
+    triggerUpdate();
+});
+
+function resetParameters() {
+    // 1. Reset variables to defaults (scaled)
+    simSpeed = -0.1;
+    phaseDiff = 0;
+    theta = 0;
+    L_leg = 25.0 * globalScale;
+    L_blue = 55.0 * globalScale;
+    L_foot = (25.0 * globalScale) * (39.17 / 45);
+    gearboxShiftX = 0;
+    S = 48.0 * globalScale;
+    Pf.x = -S;
+    Pr.x = S;
+    currentCrankHoleY = 15.2;
+    R = crankDistances[0];
+
+    // 2. Update UI Sliders
+    document.getElementById('speedSlider').value = 0.1;
+    document.getElementById('speedVal').innerText = "Low in battery";
+    document.getElementById('phaseSlider').value = 0;
+    document.getElementById('phaseVal').innerText = "0°";
+    document.getElementById('angleSlider').value = 0;
+    document.getElementById('angleVal').innerText = "0°";
+    document.getElementById('lLegSlider').value = 25;
+    document.getElementById('lLegVal').innerText = "25";
+    document.getElementById('lBlueSlider').value = 55;
+    document.getElementById('lBlueVal').innerText = "55";
+    document.getElementById('gearboxShiftSlider').value = 0;
+    document.getElementById('gearboxShiftVal').innerText = "0";
+    document.getElementById('sSlider').value = 48;
+    document.getElementById('sVal').innerText = "48";
+
+    // L_foot sync
+    document.getElementById('lFootSlider').value = 20;
+    document.getElementById('lFootVal').innerText = "20.0 (Fixed)";
+
+    // 3. Update Hole Buttons UI
+    holeButtons.forEach((btn, idx) => {
+        if (idx === 0) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+
+    // 4. Update internal states and visual assets
+    updateLegSVGPath();
+    updateCrankPosition();
+    paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
+
+    // Reset physics state if needed
+    isTorqueMode = false;
+    lockedPivotIndex = -1;
+    smoothedGround.m = 0;
+    smoothedGround.c = groundY_Ideal;
+    angularVel = 0;
+    currentWorldX = 0;
+    lastCycleX = 0;
+    cycleAvgSpeed = 0;
+    smoothedSpeed = 0;
+
+    triggerUpdate();
+}
+
+document.getElementById('resetBtn').addEventListener('click', resetParameters);
 
 // Buttons for Crank Holes
 const holeYs = [15.2, 19.7, 24.2, 28.7];

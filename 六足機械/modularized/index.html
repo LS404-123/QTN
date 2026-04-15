@@ -25,6 +25,8 @@
                 <label class="checkbox-label">
                     <input type="checkbox" id="showPathsCheck"> <span>顯示軌跡</span>
                 </label>
+                <button id="resetBtn" class="btn-secondary"
+                    style="border-color: #f87171; color: #f87171;">恢復預設值</button>
                 <button id="povBtn" class="btn-secondary admin-only">視角：以世界為中心</button>
             </div>
         </div>
@@ -59,6 +61,11 @@
                     <label>腿長 (L<sub>leg</sub>)</label>
                     <input type="range" id="lLegSlider" min="10" max="60" step="1" value="25">
                     <span class="val-display" id="lLegVal">25</span>
+                </div>
+                <div class="slider-group">
+                    <label>支架寬度 (S)</label>
+                    <input type="range" id="sSlider" min="20" max="80" step="1" value="48">
+                    <span class="val-display" id="sVal">48</span>
                 </div>
                 <div class="slider-group">
                     <label>臂長 (L<sub>blue</sub>)</label>

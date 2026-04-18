@@ -15,6 +15,17 @@ const speedVizConfig = {
 const canvas = document.getElementById('simCanvas');
 const ctx = canvas.getContext('2d');
 
+// --- Background Scroller Integration ---
+const background = new BGScroller('simCanvas', {
+    manualMode: true,
+    speeds: {
+        hill2: 0.2,
+        hill1: 0.5,
+        ground: 1.2,
+        cloud: 0.3
+    }
+});
+
 // Off-screen canvas for group transparency (Far side layering)
 const offscreenCanvas = document.createElement('canvas');
 const offCtx = offscreenCanvas.getContext('2d');
@@ -102,8 +113,26 @@ const motorBronzeStroke = '#8b4513';
 const scale = 3.5;
 const cx = canvas.width / 2;
 // Keep ground line fixed at 20px from bottom (relative to canvas height)
-const targetGy = canvas.height - 20;
-const cy = targetGy + groundY_Ideal * scale;
+let targetGy = canvas.height - 20;
+let cy = targetGy + groundY_Ideal * scale;
+
+/**
+ * 根據背景層動態調整機器人高度
+ * 定位於 ground1 與 ground2 頂端的中間線
+ */
+function updateRobotHeight() {
+    if (!background || !background.isInitialized) {
+        requestAnimationFrame(updateRobotHeight);
+        return;
+    }
+    const top1 = background.getLayerTop(4); // ground1 (最底層)
+    const top2 = background.getLayerTop(3); // ground2 (道路層)
+    const ratio = 0.2;
+    targetGy = (top1 + top2 * ratio) / (ratio + 1);
+    cy = targetGy + groundY_Ideal * scale;
+    updateCrankPosition(); // 同步更新曲柄位置
+}
+updateRobotHeight();
 
 
 function updateCrankPosition() {
@@ -129,6 +158,7 @@ let gravityScale = 1.0;
 let povMode = 'world';
 let isAdminMode = false; // Hidden Admin Authority
 let overlayAlpha = 0;   // For smooth fade in/out
+let isSlowMo = false;
 
 let paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
 const maxPathLen = 150;
@@ -422,11 +452,55 @@ function renderSide(data, isFar, targetCtx = ctx) {
 }
 
 /**
+ * 繪製單個足部在地面上的陰影
+ */
+function drawFootShadow(footPos, ground) {
+    // 計算足部在地面上的投影點 (垂直向下)
+    const shadowY = ground.m * footPos.x + ground.c;
+    const dist = Math.abs(footPos.y - shadowY);
+
+    // 隨高度增加而變淡並縮小
+    const maxDist = 35 * globalScale;
+    const opacity = Math.max(0, 0.25 * (1 - dist / maxDist)); // Increased transparency (0.45 -> 0.25)
+    if (opacity <= 0) return;
+
+    const baseWidth = 14 * scale;
+    const baseHeight = 4 * scale;
+    const sizeMult = 1 - (dist / maxDist) * 0.4;
+    const width = baseWidth * sizeMult;
+    const height = baseHeight * sizeMult;
+
+    // 將地面點轉換為屏幕坐標
+    const pos = mapCoords({ x: footPos.x, y: shadowY });
+
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    // ctx.rotate(tilt); // Removed rotation per user request
+    ctx.beginPath();
+    ctx.ellipse(0, 0, width, height, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
+    ctx.fill();
+    ctx.restore();
+}
+
+/**
  * Main Render and Physics Logic Loop
  */
 function renderFrame(currentTheta, recordPath, dt = 0.016) {
     // 0. Clear Background (Set to transparent/clean state)
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 0.1 Update & Render Background Scroller
+    if (isPlaying) {
+        // 同步背景速度與模擬速度 (負號是因為兩者方向定義可能不同)
+        const factor = isSlowMo ? 0.2 : 1.0;
+        const speedFactor = Math.abs(simSpeed * factor) * 10;
+        background.updateSpeed('ground', 1.2 * speedFactor);
+        background.updateSpeed('hill1', 0.5 * speedFactor);
+        background.updateSpeed('hill2', 0.2 * speedFactor);
+        background.update();
+    }
+    background.render(ctx);
 
     // 0.1 Update Scenic Trees & Ground Particles (Removed)
 
@@ -577,7 +651,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         prevFeet = allFeet.map(f => ({ x: f.x, y: f.y }));
 
         // 4.1 Real-time Speed Tracking (Aggressive EMA + Friction Filter)
-        if (dt > 0) {
+        if (dt > 0 && recordPath) { // Only update speed when isPlaying is true
             let instantaneousSpeed = frameDx / dt; // pixels per second
 
             // --- Friction/Jitter Threshold ---
@@ -643,6 +717,9 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             }
         }
 
+        // 5.9 Individual Foot Shadows (Draw before robot paths and body)
+        allFeet.forEach(f => drawFootShadow(f, smoothedGround));
+
         // Ground fill removed, only path remains
         ctx.restore();
 
@@ -660,7 +737,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             ctx.moveTo(0, gy);
             ctx.lineTo(canvas.width, gy);
         }
-        ctx.strokeStyle = '#059669';
+        ctx.strokeStyle = (povMode === 'robot') ? '#000000' : 'rgba(0, 0, 0, 0)';
         ctx.lineWidth = 3;
         ctx.stroke();
 
@@ -930,8 +1007,9 @@ function animate() {
         // 確保參數化 SVG 在最初幾幀能成功覆蓋 svgs.js 的非同步加載結果
         if (globalSimTime < 1.0) updateLegSVGPath();
 
-        theta += simSpeed;
-        globalSimTime += dt;
+        const factor = isSlowMo ? 0.2 : 1.0;
+        theta += simSpeed * factor;
+        globalSimTime += dt * factor;
 
         // Track cycle completion for averaging (when theta crosses 0)
         // Check for wrapping in both directions
@@ -977,13 +1055,13 @@ function animate() {
 
     renderFrame(theta, isPlaying, dt);
 
-    if (isPlaying || isTorqueMode || Math.abs(angularVel) > 0.001 || smoothedSpeed > 0.1 || (isAdminMode && overlayAlpha < 1) || (!isAdminMode && overlayAlpha > 0)) {
+    if (isPlaying || isTorqueMode || Math.abs(angularVel) > 0.001 || (isPlaying && smoothedSpeed > 0.1) || (isAdminMode && overlayAlpha < 1) || (!isAdminMode && overlayAlpha > 0)) {
         isLooping = true;
         requestAnimationFrame(animate);
     } else {
         isLooping = false;
-        smoothedSpeed = 0; // Snap to zero when very low
-        renderFrame(theta, false, 0); // Final render to update UI to 0
+        // smoothedSpeed = 0; // Commented out to freeze speed on pause
+        renderFrame(theta, false, 0); // Final render to update UI
     }
 
     // Update overlay Alpha for smooth fade
@@ -1031,6 +1109,12 @@ document.getElementById('clearBtn').addEventListener('click', () => {
 
 document.getElementById('showPathsCheck').addEventListener('change', (e) => {
     showPaths = e.target.checked;
+    triggerUpdate();
+});
+
+document.getElementById('slowMoBtn').addEventListener('click', (e) => {
+    isSlowMo = !isSlowMo;
+    e.target.classList.toggle('active', isSlowMo);
     triggerUpdate();
 });
 

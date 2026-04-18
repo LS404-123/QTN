@@ -54,17 +54,29 @@ legSVGPath = null;
 let legSVG_h2y = 65; // Matches the default 45mm spacing in SVG units (20 + 45)
 
 function updateLegSVGPath() {
-    // 預設 L_leg 為 25*globalScale 時，SVG 孔距應為 45
+    // h 是兩個安裝孔之間的 SVG 距離 (由 L_leg 決定)
     const h = (L_leg / (25.0 * globalScale)) * 45.0;
     legSVG_h2y = 20 + h;
 
-    // 根據腳部原始設計 (Hole 2 at 65, Tip at 104.17) 修正規劃比例
-    // 支點到腳尖距離 = 39.17。扣除 ry=13 後，中心 y 偏移量 = 26.17
-    const yOff2 = h + 26.17;
-    const yOff1 = h + 10.67;
+    // 將物理腳長 L_foot 換算回相對於「第二個孔」的偏移量
+    const footOffsetSVG = (L_foot / (25.0 * globalScale)) * 45.0;
 
-    // 組合主路徑 + 兩個安裝孔 (r=1.5)
-    const legPath = `M 21, 20 A 9,9 0 0, 1 39, 20 L 39, ${20 + yOff1} A 15.5,15.5 0 0, 0 54.5, ${20 + yOff2} A 25, 13 0 1, 1 5.39, ${20 + yOff2} A 15.5,15.5 0 0, 0 21, ${20 + yOff1} Z`;
+    // 定義幾何常數，確保形狀不變
+    const transitionY = 10.67; // 轉折點相對於第二個孔的位移
+    const ellipseRY = 13;      // 腳掌橢圓的垂直半徑
+    const ellipseRX = 25;      // 腳掌橢圓的水平半徑
+    const transR = 15.5;       // 過渡圓弧半徑
+
+    // yOff1: 直線段結束與過渡圓弧開始的點
+    const yOff1 = h + transitionY;
+    // yOff2: 橢圓中心點的 Y 軸位置 (確保腳尖總長度正確)
+    const yOff2 = h + (footOffsetSVG - ellipseRY);
+
+    // 安全檢查：防止腳長過短導致幾何重疊
+    const finalY2 = Math.max(yOff2, yOff1 + 2);
+
+    // 繪製路徑：所有半徑數值 (9, transR, ellipseRX, ellipseRY) 均為常數
+    const legPath = `M 21, 20 A 9,9 0 0, 1 39, 20 L 39, ${20 + yOff1} A ${transR},${transR} 0 0, 0 54.5, ${20 + finalY2} A ${ellipseRX}, ${ellipseRY} 0 1, 1 5.39, ${20 + finalY2} A ${transR},${transR} 0 0, 0 21, ${20 + yOff1} Z`;
     const hole1 = `M 28.5, 20 a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0`;
     const hole2 = `M 28.5, ${20 + h} a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0`;
 
@@ -548,14 +560,19 @@ function renderSide(data, isFar, targetCtx = ctx) {
  * Main Render and Physics Logic Loop
  */
 function renderFrame(currentTheta, recordPath, dt = 0.016) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // 0. Draw Sky Background (Inside Canvas to prevent gaps)
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    skyGrad.addColorStop(0, '#63a4ff');
+    skyGrad.addColorStop(1, '#83eaf1');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 0. Draw Speed Particles (Bottom Layer) - Driven by stable cycle average
-    speedParticles.forEach(p => p.draw(ctx, cycleAvgSpeed));
-
-    // Draw Scenic Trees & Ground Particles
-    trees.forEach(t => t.draw(ctx));
-    particles.forEach(p => p.draw(ctx, cycleAvgSpeed));
+    // 0.1 Update Scenic Trees & Ground Particles (Logic only)
+    if (isPlaying || isTorqueMode) {
+        speedParticles.forEach(p => p.update(dt, smoothedSpeed));
+        particles.forEach(p => p.update(dt, smoothedSpeed));
+        trees.forEach(t => t.update(dt, cycleAvgSpeed));
+    }
 
 
     // Clear off-screen buffer
@@ -599,10 +616,15 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 
         let groundLine;
         if (validLines.length > 0) {
-            groundLine = validLines[0];
+            // 穩定化：優先選擇支撐基底最廣的線段，防止坡度突跳
+            groundLine = validLines.reduce((best, curr) => {
+                const bestWidth = Math.abs(best.p1.x - best.p2.x);
+                const currWidth = Math.abs(curr.p1.x - curr.p2.x);
+                return currWidth > bestWidth ? curr : best;
+            }, validLines[0]);
         } else {
             let lowest = allFeet.reduce((min, p) => p.y < min.y ? p : min, allFeet[0]);
-            groundLine = { m: 0, c: lowest.y, p1: lowest, p2: lowest };
+            groundLine = { m: smoothedGround.m, c: lowest.y - (smoothedGround.m * lowest.x), p1: lowest, p2: lowest };
         }
 
         // 3. Update Physics (Tipping Dynamics)
@@ -774,16 +796,29 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             ctx.beginPath();
             ctx.moveTo(gm1.x, gm1.y);
             ctx.lineTo(gm2.x, gm2.y);
-            ctx.lineTo(canvas.width + 100, canvas.height + 100);
-            ctx.lineTo(-100, canvas.height + 100);
+            // Deep fill to avoid showing background
+            ctx.lineTo(canvas.width + 2000, canvas.height + 2000);
+            ctx.lineTo(-2000, canvas.height + 2000);
             ctx.closePath();
         } else {
             const gy = cy - groundY_Ideal * scale;
             ctx.beginPath();
-            ctx.rect(0, gy, canvas.width, canvas.height - gy);
+            // Extend very deep to ensure no gaps
+            ctx.rect(0, gy, canvas.width, canvas.height - gy + 1000);
         }
         // Gradient for a premium "Field" look
-        const groundGrad = ctx.createLinearGradient(0, 480, 0, canvas.height);
+        let groundGrad;
+        if (povMode === 'robot') {
+            // In robot mode, the ground tilts, so we align the gradient with the ground normal
+            const angle = Math.atan(smoothedGround.m);
+            const cosA = Math.cos(angle), sinA = Math.sin(angle);
+            // Gradient should be perpendicular to the ground line
+            const gX = 0, gY = cy - groundY_Ideal * scale;
+            groundGrad = ctx.createLinearGradient(gX, gY, gX - sinA * 200, gY + cosA * 200);
+        } else {
+            const gyStart = (cy - groundY_Ideal * scale);
+            groundGrad = ctx.createLinearGradient(0, gyStart, 0, gyStart + 200);
+        }
         groundGrad.addColorStop(0, '#10b981');
         groundGrad.addColorStop(1, '#065f46');
         ctx.fillStyle = groundGrad;
@@ -823,8 +858,14 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         // 7.1 Clear robot buffer
         robotCtx.clearRect(0, 0, robotCanvas.width, robotCanvas.height);
 
-        // 7.2 Draw Far Side to robot buffer
+        // 7.2 Draw Environment & Far Side to robot buffer
         offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+        // Scenic objects also participate in Motion Blur
+        speedParticles.forEach(p => p.draw(offCtx, cycleAvgSpeed));
+        trees.forEach(t => t.draw(offCtx));
+        particles.forEach(p => p.draw(offCtx, cycleAvgSpeed));
+
         renderSide(far, true, offCtx);
         robotCtx.save();
         robotCtx.globalAlpha = 0.75;
@@ -953,7 +994,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         const { echoCount, echoOffsetMult, echoBaseAlpha } = speedVizConfig;
 
         // Draw the Echoes (Ghosts) - Driven by stable cycle average
-        const vizSpeed = cycleAvgSpeed;
+        const vizSpeed = isPlaying ? cycleAvgSpeed : 0;
         if (Math.abs(vizSpeed) > 1) {
             for (let i = echoCount; i >= 1; i--) {
                 const offsetX = -vizSpeed * echoOffsetMult * i * scale;
@@ -1016,33 +1057,47 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 }
 
 function drawOverlayStats() {
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.fillRect(canvas.width - 240, 15, 225, 120);
+    const w = 260;
+    const h = 135;
+    const x = canvas.width - w - 20;
+    const y = 20;
 
+    // 1. Background with rounded corners
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, 12);
+        ctx.fill();
+    } else {
+        ctx.fillRect(x, y, w, h);
+    }
+
+    // 2. Accent Bar
     ctx.fillStyle = '#3b82f6';
-    ctx.fillRect(canvas.width - 240, 15, 4, 120);
+    ctx.fillRect(x, y + 10, 4, h - 20);
 
+    // 3. Title
     ctx.fillStyle = '#f8fafc';
     ctx.font = 'bold 15px system-ui';
     ctx.textAlign = 'left';
-    ctx.fillText('單腳觸地推進數據', canvas.width - 220, 40);
+    ctx.fillText('單腳觸地推進數據', x + 20, y + 35);
 
-    ctx.font = '14px "JetBrains Mono", monospace';
+    // 4. Data Rows (Left Label, Right Value)
+    const drawRow = (label, value, color, ty) => {
+        ctx.textAlign = 'left';
+        ctx.font = '14px system-ui';
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(label, x + 20, ty);
 
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('前次腳步推進: ', canvas.width - 220, 70);
-    ctx.fillStyle = '#38bdf8';
-    ctx.fillText(`${displayDist.toFixed(1)} mm`, canvas.width - 110, 70);
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 14px "JetBrains Mono", monospace';
+        ctx.fillStyle = color;
+        ctx.fillText(value, x + w - 20, ty);
+    };
 
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('前次腳步均速: ', canvas.width - 220, 95);
-    ctx.fillStyle = '#34d399';
-    ctx.fillText(`${displaySpeed.toFixed(1)} mm/s`, canvas.width - 110, 95);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('當前移動速度: ', canvas.width - 220, 120);
-    ctx.fillStyle = '#facc15';
-    ctx.fillText(`${smoothedSpeed.toFixed(1)} mm/s`, canvas.width - 110, 120);
+    drawRow('前次腳步推進:', `${displayDist.toFixed(1)} mm`, '#38bdf8', y + 68);
+    drawRow('前次腳步均速:', `${displaySpeed.toFixed(1)} mm/s`, '#34d399', y + 93);
+    drawRow('當前移動速度:', `${smoothedSpeed.toFixed(1)} mm/s`, '#facc15', y + 118);
 }
 
 function animate() {
@@ -1086,7 +1141,7 @@ function animate() {
         if (theta > Math.PI * 2) theta -= Math.PI * 2;
         if (theta < 0) theta += Math.PI * 2;
 
-        // User Request: Whatever the direction is, the slider should move from left to right (0 to 360)
+        // Whatever the direction is, the slider should move from left to right (0 to 360)
         // If simulation is running backwards (simSpeed < 0), theta goes down. 
         // We invert the visualization so the slider naturally progresses forward.
         let displayTheta = theta;
@@ -1115,10 +1170,12 @@ function animate() {
     if (isAdminMode) overlayAlpha = Math.min(1, overlayAlpha + fadeSpeed);
     else overlayAlpha = Math.max(0, overlayAlpha - fadeSpeed);
 
-    // Update particles regardless of isPlaying (to handle residual speed)
-    speedParticles.forEach(p => p.update(dt, smoothedSpeed));
-    particles.forEach(p => p.update(dt, smoothedSpeed));
-    trees.forEach(t => t.update(dt, cycleAvgSpeed));
+    // Update particles and environment only when running or in physics motion
+    if (isPlaying || isTorqueMode) {
+        speedParticles.forEach(p => p.update(dt, smoothedSpeed));
+        particles.forEach(p => p.update(dt, smoothedSpeed));
+        trees.forEach(t => t.update(dt, cycleAvgSpeed));
+    }
 }
 
 function triggerUpdate() {
@@ -1239,16 +1296,13 @@ const setupSlider = (id, valId, callback) => {
 
 setupSlider('lLegSlider', 'lLegVal', (v) => {
     L_leg = v;
-    // 物理腳長鎖定在 39.17 SVG 比例，確保與原始設計型態一致且確實貼地
-    L_foot = (25.0 * globalScale) * (39.17 / 45);
-    document.getElementById('lFootSlider').value = L_foot / globalScale;
-    document.getElementById('lFootVal').innerText = (L_foot / globalScale).toFixed(1) + " (Fixed)";
-
-    updateLegSVGPath(); // 動態更新 SVG 路徑，防止腳掌縮放
+    updateLegSVGPath();
 });
 setupSlider('lBlueSlider', 'lBlueVal', (v) => L_blue = v);
-// L_footSlider 不再負責手動調整，已被鎖死
-setupSlider('lFootSlider', 'lFootVal', (v) => { });
+setupSlider('lFootSlider', 'lFootVal', (v) => {
+    L_foot = v;
+    updateLegSVGPath();
+});
 setupSlider('gearboxShiftSlider', 'gearboxShiftVal', (v) => {
     gearboxShiftX = v / globalScale;
     updateCrankPosition(); // Sync physical pivot with visual gearbox
@@ -1296,8 +1350,8 @@ function resetParameters() {
     document.getElementById('sVal').innerText = "48";
 
     // L_foot sync
-    document.getElementById('lFootSlider').value = 20;
-    document.getElementById('lFootVal').innerText = "20.0 (Fixed)";
+    document.getElementById('lFootSlider').value = 21.8;
+    document.getElementById('lFootVal').innerText = "21.8";
 
     // 3. Update Hole Buttons UI
     holeButtons.forEach((btn, idx) => {

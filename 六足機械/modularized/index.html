@@ -5,96 +5,111 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>六足機器人模擬器 - 姿態控制與效能統計</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-
-    <h2>進階機械人姿態模擬器</h2>
-    <canvas id="simCanvas" width="900" height="500"></canvas>
-
-    <div class="control-panel">
-        <!-- Section 1: 播放與基本控制 -->
-        <div class="control-section">
-            <div class="section-title">播放與路徑控制</div>
-            <div class="control-row">
-                <button id="toggleBtn">暫停自動播放</button>
-                <button id="periodBtn">一個週期</button>
-                <button id="reverseBtn" class="btn-secondary">反轉方向</button>
-                <button id="clearBtn" class="btn-secondary">清除軌跡</button>
-                <label class="checkbox-label">
-                    <input type="checkbox" id="showPathsCheck"> <span>顯示軌跡</span>
-                </label>
-                <button id="resetBtn" class="btn-secondary"
-                    style="border-color: #f87171; color: #f87171;">恢復預設值</button>
-                <button id="povBtn" class="btn-secondary admin-only">視角：以世界為中心</button>
+    <div class="app-container control-panel">
+        <header>
+            <h2>進階機械人姿態模擬器</h2>
+            <div class="header-actions">
+                <button id="resetBtn" class="btn-secondary">恢復預設</button>
+                <button id="povBtn" class="admin-only">視角切換</button>
             </div>
-        </div>
+        </header>
 
-        <!-- Section 2: 模擬環境與視角 -->
-        <div class="control-section">
-            <div class="section-title">模擬環境與觀測</div>
-            <div class="control-row">
-                <div class="slider-group">
-                    <label>模擬速度</label>
-                    <input type="range" id="speedSlider" min="0.1" max="0.2" step="0.01" value="0.1">
-                    <span class="val-display" id="speedVal">Low in battery</span>
-                </div>
-                <div class="slider-group">
-                    <label>相位差</label>
-                    <input type="range" id="phaseSlider" min="0" max="180" step="1" value="0">
-                    <span class="val-display" id="phaseVal">0°</span>
-                </div>
-                <div class="slider-group">
-                    <label>手動角度</label>
-                    <input type="range" id="angleSlider" min="0" max="360" step="1" value="0">
-                    <span class="val-display" id="angleVal">0°</span>
-                </div>
-            </div>
-        </div>
+        <main class="bento-grid">
+            <!-- Hero Canvas Area -->
+            <section class="bento-item hero-canvas">
+                <canvas id="simCanvas" width="900" height="500"></canvas>
+            </section>
 
-        <!-- Section 3: 機械幾何與構造 -->
-        <div class="control-section" id="adminSection">
-            <div class="section-title">機械幾何構造設計</div>
-            <div class="control-row">
-                <div class="slider-group">
-                    <label>腿長 (L<sub>leg</sub>)</label>
-                    <input type="range" id="lLegSlider" min="10" max="60" step="1" value="25">
-                    <span class="val-display" id="lLegVal">25</span>
+            <!-- Playback Controls -->
+            <section class="bento-item controls-basic">
+                <div class="section-header">
+                    <span class="section-title">播放與路徑</span>
                 </div>
-                <div class="slider-group">
-                    <label>支架寬度 (S)</label>
-                    <input type="range" id="sSlider" min="20" max="80" step="1" value="48">
-                    <span class="val-display" id="sVal">48</span>
-                </div>
-                <div class="slider-group">
-                    <label>臂長 (L<sub>blue</sub>)</label>
-                    <input type="range" id="lBlueSlider" min="40" max="100" step="1" value="55">
-                    <span class="val-display" id="lBlueVal">55</span>
-                </div>
-                <div class="slider-group disabled-group" title="比例鎖定 (36:45)">
-                    <label>腳長 (L<sub>foot</sub>)</label>
-                    <input type="range" id="lFootSlider" min="10" max="60" step="1" value="20" disabled>
-                    <span class="val-display" id="lFootVal">20 (Fixed)</span>
-                </div>
-
-                <div class="slider-group">
-                    <label>齒輪箱位移</label>
-                    <input type="range" id="gearboxShiftSlider" min="-10" max="10" step="0.5" value="0">
-                    <span class="val-display" id="gearboxShiftVal">0</span>
-                </div>
-
-                <div class="slider-group hole-selector-group">
-                    <label>曲柄孔位 (R)</label>
-                    <div class="segmented-control">
-                        <button id="crankHole1Btn" class="hole-btn active">孔 1</button>
-                        <button id="crankHole2Btn" class="hole-btn">孔 2</button>
-                        <button id="crankHole3Btn" class="hole-btn">孔 3</button>
-                        <button id="crankHole4Btn" class="hole-btn">孔 4</button>
+                <div class="button-stack">
+                    <button id="toggleBtn" class="btn-primary">暫停自動播放</button>
+                    <div class="button-row">
+                        <button id="periodBtn" class="btn-secondary">單一週期</button>
+                        <button id="reverseBtn" class="btn-secondary">反轉方向</button>
+                    </div>
+                    <div class="button-row">
+                        <button id="clearBtn" class="btn-secondary">清除軌跡</button>
+                        <label class="checkbox-apple">
+                            <input type="checkbox" id="showPathsCheck">
+                            <span class="slider-check"></span>
+                            <span class="label-text">軌跡</span>
+                        </label>
                     </div>
                 </div>
-            </div>
-        </div>
+            </section>
+
+            <!-- Environment Sliders -->
+            <section class="bento-item controls-env">
+                <div class="section-header">
+                    <span class="section-title">模擬環境</span>
+                </div>
+                <div class="slider-stack">
+                    <div class="apple-slider">
+                        <div class="slider-info"><label>模擬速度</label><span id="speedVal">0.10x</span></div>
+                        <input type="range" id="speedSlider" min="0.1" max="0.2" step="0.01" value="0.1">
+                    </div>
+                    <div class="apple-slider">
+                        <div class="slider-info"><label>相位差</label><span id="phaseVal">0°</span></div>
+                        <input type="range" id="phaseSlider" min="0" max="180" step="1" value="0">
+                    </div>
+                    <div class="apple-slider">
+                        <div class="slider-info"><label>手動角度</label><span id="angleVal">0°</span></div>
+                        <input type="range" id="angleSlider" min="0" max="360" step="1" value="0">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Mechanical Geometry (Admin Only) -->
+            <section class="bento-item controls-mech" id="adminSection">
+                <div class="section-header">
+                    <span class="section-title">機械構造設計</span>
+                </div>
+                <div class="grid-sliders">
+                    <div class="apple-slider">
+                        <div class="slider-info"><label>腿長 L<sub>leg</sub></label><span id="lLegVal">25</span></div>
+                        <input type="range" id="lLegSlider" min="10" max="60" step="1" value="25">
+                    </div>
+                    <div class="apple-slider">
+                        <div class="slider-info"><label>支架 S</label><span id="sVal">48</span></div><input type="range"
+                            id="sSlider" min="20" max="80" step="1" value="48">
+                    </div>
+                    <div class="apple-slider">
+                        <div class="slider-info"><label>臂長 L<sub>blue</sub></label><span id="lBlueVal">55</span></div>
+                        <input type="range" id="lBlueSlider" min="40" max="100" step="1" value="55">
+                    </div>
+                    <div class="apple-slider">
+                        <div class="slider-info"><label>腳長 L<sub>foot</sub></label><span id="lFootVal">20</span></div>
+                        <input type="range" id="lFootSlider" min="10" max="60" step="1" value="20">
+                    </div>
+                    <div class="apple-slider">
+                        <div class="slider-info"><label>齒輪箱位移</label><span id="gearboxShiftVal">0</span></div><input
+                            type="range" id="gearboxShiftSlider" min="-10" max="10" step="0.5" value="0">
+                    </div>
+
+                    <div class="hole-selector">
+                        <label>曲柄孔位 (R)</label>
+                        <div class="segmented-control">
+                            <button id="crankHole1Btn" class="hole-btn active">1</button>
+                            <button id="crankHole2Btn" class="hole-btn">2</button>
+                            <button id="crankHole3Btn" class="hole-btn">3</button>
+                            <button id="crankHole4Btn" class="hole-btn">4</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
     </div>
 
     <!-- 載入外部 SVG 原始幾何與模擬器邏輯 -->

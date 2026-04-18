@@ -101,9 +101,10 @@ const motorBronzeStroke = '#8b4513';
 // Viewport Settings
 const scale = 3.5;
 const cx = canvas.width / 2;
-// Keep ground line fixed at roughly 480px down (near bottom of 500px canvas)
-const targetGy = 480;
+// Keep ground line fixed at 20px from bottom (relative to canvas height)
+const targetGy = canvas.height - 20;
 const cy = targetGy + groundY_Ideal * scale;
+
 
 function updateCrankPosition() {
     const bodyDistancePx = bodyYOffset * scale;
@@ -168,147 +169,11 @@ let lastCycleTime = 0;
 let prevTheta = 0;
 
 // --- Speed Visualization State ---
-class SpeedParticle {
-    constructor() {
-        this.vx = 0; // Current internal velocity for inertia/decay
-        this.reset();
-    }
-    reset() {
-        this.x = Math.random() * canvas.width;
-        this.y = Math.random() * (canvas.height - 50); // across full height
-        this.len = 15 + Math.random() * 40;
-        this.speedMult = (0.8 + Math.random() * 0.4) * speedVizConfig.particleSpeedMult;
-        this.opacity = (Math.random() * 0.4 + 0.2) * speedVizConfig.particleBaseOpacity;
-        // Don't reset vx, keep momentum during screen wrap
-    }
-    update(dt, speed) {
-        // Target velocity based on robot movement
-        const targetVx = speed * scale * this.speedMult;
+// Scenic objects removed as requested
+// const particles = Array.from({ length: 40 }, () => new Particle());
+// const trees = Array.from({ length: 6 }, () => new Tree());
+// let speedParticles = Array.from({ length: speedVizConfig.particleCount }, () => new SpeedParticle());
 
-        // --- Decay / Smoothing Term (Inertia) ---
-        // Every frame, current velocity drifts 10% towards target velocity
-        const smoothing = 0.05;
-        this.vx = this.vx * (1 - smoothing) + targetVx * smoothing;
-
-        this.x -= this.vx * dt;
-
-        if (this.x < -100) {
-            this.x = canvas.width + 100;
-            this.y = Math.random() * (canvas.height - 50);
-        } else if (this.x > canvas.width + 100) {
-            this.x = -100;
-            this.y = Math.random() * (canvas.height - 50);
-        }
-    }
-    draw(ctx, speed) {
-        const dynamicLen = this.len + Math.abs(speed * scale) * speedVizConfig.particleLengthScale;
-        ctx.beginPath();
-        ctx.moveTo(this.x, this.y);
-        // Draw tail based on direction
-        ctx.lineTo(this.x + (speed >= 0 ? dynamicLen : -dynamicLen), this.y);
-        ctx.strokeStyle = `rgba(30, 58, 138, ${this.opacity})`;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-    }
-}
-
-class Particle {
-    constructor() {
-        this.reset(true);
-    }
-    reset(initial = false) {
-        this.x = initial ? Math.random() * canvas.width : (Math.random() > 0.5 ? canvas.width + 10 : -10);
-        this.y = 480 + Math.random() * 80;
-        this.opacity = 0.1 + Math.random() * 0.3;
-        this.len = 5 + Math.random() * 15;
-    }
-    update(dt, speed) {
-        const targetVx = speed * scale;
-        this.x -= targetVx * dt;
-        if (this.x < -100 || this.x > canvas.width + 100) {
-            this.reset();
-        }
-    }
-    draw(ctx, speed) {
-        const dynamicLen = this.len * (1 + Math.abs(speed) / 50);
-        ctx.beginPath();
-        ctx.moveTo(this.x, this.y);
-        ctx.lineTo(this.x + (speed >= 0 ? dynamicLen : -dynamicLen), this.y);
-        ctx.strokeStyle = `rgba(30, 58, 138, ${this.opacity})`;
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
-    }
-}
-
-class Tree {
-    constructor() {
-        this.reset(true);
-    }
-    reset(initial = false) {
-        const types = ['pine', 'round', 'poplar'];
-        this.type = types[Math.floor(Math.random() * 3)];
-        this.x = initial ? Math.random() * (canvas.width + 600) - 300 : (Math.random() > 0.5 ? canvas.width + 300 : -300);
-
-        // Depth-linked parameters (smaller = further)
-        this.scale = 0.4 + Math.random() * 0.8; // Range [0.4, 1.2]
-        // Opacity: map scale [0.4, 1.2] to opacity [0.3, 0.8]
-        this.opacity = (this.scale - 0.4) / 0.8 * 0.5 + 0.3;
-        this.y = 480;
-    }
-    update(dt, speed) {
-        // Parallax speed: smaller trees (far away) move slower
-        // Normalized so that trees with scale 1.2 move at 100% ground speed
-        const parallaxFactor = this.scale / 1.2;
-        const targetVx = speed * scale * parallaxFactor;
-        this.x -= targetVx * dt;
-
-        if (this.x < -400) {
-            this.x = canvas.width + 400;
-            this.reset(false);
-        } else if (this.x > canvas.width + 400) {
-            this.x = -400;
-            this.reset(false);
-        }
-    }
-    draw(ctx) {
-        ctx.save();
-        ctx.translate(this.x, this.y - 20 * this.scale);
-        ctx.scale(this.scale, this.scale);
-        ctx.globalAlpha = this.opacity;
-
-        const green = '#a7f3d0';
-        const brown = '#94a3b8';
-
-        if (this.type === 'pine') {
-            ctx.beginPath(); ctx.moveTo(0, -110);
-            ctx.bezierCurveTo(15, -85, 30, -75, 10, -65); ctx.bezierCurveTo(30, -55, 45, -35, 20, -30);
-            ctx.bezierCurveTo(45, -20, 60, 10, 0, 10); ctx.bezierCurveTo(-60, 10, -45, -20, -20, -30);
-            ctx.bezierCurveTo(-45, -35, -30, -55, -10, -65); ctx.bezierCurveTo(-30, -75, -15, -85, 0, -110);
-            ctx.closePath(); ctx.fillStyle = green; ctx.fill(); ctx.strokeStyle = brown; ctx.lineWidth = 3; ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(0, 10); ctx.lineTo(0, -70); ctx.moveTo(0, -10); ctx.lineTo(-20, -15); ctx.moveTo(0, -10); ctx.lineTo(20, -15); ctx.stroke();
-        } else if (this.type === 'round') {
-            ctx.beginPath(); ctx.moveTo(0, -100); ctx.bezierCurveTo(20, -105, 40, -80, 40, -55);
-            ctx.bezierCurveTo(55, -40, 50, -10, 25, -5); ctx.bezierCurveTo(15, 5, -15, 5, -25, -5);
-            ctx.bezierCurveTo(-50, -10, -55, -40, -40, -55); ctx.bezierCurveTo(-40, -80, -20, -105, 0, -100);
-            ctx.closePath(); ctx.fillStyle = green; ctx.fill(); ctx.strokeStyle = brown; ctx.lineWidth = 3; ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -70); ctx.moveTo(0, -20); ctx.lineTo(-20, -40); ctx.moveTo(0, -30); ctx.lineTo(25, -45); ctx.stroke();
-        } else {
-            ctx.beginPath(); ctx.moveTo(0, -105); ctx.bezierCurveTo(15, -105, 25, -90, 15, -75);
-            ctx.bezierCurveTo(30, -70, 40, -50, 25, -35); ctx.bezierCurveTo(45, -30, 45, 0, 0, 0);
-            ctx.bezierCurveTo(-45, 0, -45, -30, -25, -35); ctx.bezierCurveTo(-40, -50, -30, -70, -15, -75);
-            ctx.bezierCurveTo(-25, -90, -15, -105, 0, -100);
-            ctx.closePath(); ctx.fillStyle = green; ctx.fill(); ctx.strokeStyle = brown; ctx.lineWidth = 3; ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -75); ctx.moveTo(0, -25); ctx.lineTo(-15, -45); ctx.moveTo(0, -40); ctx.lineTo(15, -55); ctx.stroke();
-        }
-        ctx.beginPath(); ctx.moveTo(-20, 20); ctx.lineTo(20, 20); ctx.moveTo(0, 0); ctx.lineTo(0, 20); ctx.stroke();
-        ctx.restore();
-    }
-}
-
-// Global scenic objects
-const particles = Array.from({ length: 40 }, () => new Particle());
-const trees = Array.from({ length: 6 }, () => new Tree());
-let speedParticles = Array.from({ length: speedVizConfig.particleCount }, () => new SpeedParticle());
 
 // Viewport Settings (Moved to top to prevent ReferenceError)
 
@@ -560,23 +425,14 @@ function renderSide(data, isFar, targetCtx = ctx) {
  * Main Render and Physics Logic Loop
  */
 function renderFrame(currentTheta, recordPath, dt = 0.016) {
-    // 0. Draw Sky Background (Inside Canvas to prevent gaps)
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    skyGrad.addColorStop(0, '#63a4ff');
-    skyGrad.addColorStop(1, '#83eaf1');
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // 0. Clear Background (Set to transparent/clean state)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 0.1 Update Scenic Trees & Ground Particles (Logic only)
-    if (isPlaying || isTorqueMode) {
-        speedParticles.forEach(p => p.update(dt, smoothedSpeed));
-        particles.forEach(p => p.update(dt, smoothedSpeed));
-        trees.forEach(t => t.update(dt, cycleAvgSpeed));
-    }
-
+    // 0.1 Update Scenic Trees & Ground Particles (Removed)
 
     // Clear off-screen buffer
     offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
 
     // 使用前一幀的地面斜率來預估腳尖位置，確保平滑度
     const near = getLegPositions(currentTheta, smoothedGround.m);
@@ -787,43 +643,9 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             }
         }
 
-        // 7. Drawing Ground (Solid Fill)
-        ctx.save();
-        if (povMode === 'robot') {
-            const gX1 = -1000, gX2 = 1000;
-            const gm1 = mapCoords({ x: gX1, y: smoothedGround.m * gX1 + smoothedGround.c });
-            const gm2 = mapCoords({ x: gX2, y: smoothedGround.m * gX2 + smoothedGround.c });
-            ctx.beginPath();
-            ctx.moveTo(gm1.x, gm1.y);
-            ctx.lineTo(gm2.x, gm2.y);
-            // Deep fill to avoid showing background
-            ctx.lineTo(canvas.width + 2000, canvas.height + 2000);
-            ctx.lineTo(-2000, canvas.height + 2000);
-            ctx.closePath();
-        } else {
-            const gy = cy - groundY_Ideal * scale;
-            ctx.beginPath();
-            // Extend very deep to ensure no gaps
-            ctx.rect(0, gy, canvas.width, canvas.height - gy + 1000);
-        }
-        // Gradient for a premium "Field" look
-        let groundGrad;
-        if (povMode === 'robot') {
-            // In robot mode, the ground tilts, so we align the gradient with the ground normal
-            const angle = Math.atan(smoothedGround.m);
-            const cosA = Math.cos(angle), sinA = Math.sin(angle);
-            // Gradient should be perpendicular to the ground line
-            const gX = 0, gY = cy - groundY_Ideal * scale;
-            groundGrad = ctx.createLinearGradient(gX, gY, gX - sinA * 200, gY + cosA * 200);
-        } else {
-            const gyStart = (cy - groundY_Ideal * scale);
-            groundGrad = ctx.createLinearGradient(0, gyStart, 0, gyStart + 200);
-        }
-        groundGrad.addColorStop(0, '#10b981');
-        groundGrad.addColorStop(1, '#065f46');
-        ctx.fillStyle = groundGrad;
-        ctx.fill();
+        // Ground fill removed, only path remains
         ctx.restore();
+
 
         // Ground Top Line
         ctx.beginPath();
@@ -861,10 +683,8 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         // 7.2 Draw Environment & Far Side to robot buffer
         offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
-        // Scenic objects also participate in Motion Blur
-        speedParticles.forEach(p => p.draw(offCtx, cycleAvgSpeed));
-        trees.forEach(t => t.draw(offCtx));
-        particles.forEach(p => p.draw(offCtx, cycleAvgSpeed));
+        // Scenic objects drawing removed
+
 
         renderSide(far, true, offCtx);
         robotCtx.save();
@@ -1062,6 +882,7 @@ function drawOverlayStats() {
     const x = canvas.width - w - 20;
     const y = 20;
 
+
     // 1. Background with rounded corners
     ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
     if (ctx.roundRect) {
@@ -1170,12 +991,9 @@ function animate() {
     if (isAdminMode) overlayAlpha = Math.min(1, overlayAlpha + fadeSpeed);
     else overlayAlpha = Math.max(0, overlayAlpha - fadeSpeed);
 
-    // Update particles and environment only when running or in physics motion
-    if (isPlaying || isTorqueMode) {
-        speedParticles.forEach(p => p.update(dt, smoothedSpeed));
-        particles.forEach(p => p.update(dt, smoothedSpeed));
-        trees.forEach(t => t.update(dt, cycleAvgSpeed));
-    }
+    // Update environment only when running or in physics motion
+    // (Scenic updates removed)
+
 }
 
 function triggerUpdate() {

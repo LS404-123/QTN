@@ -23,10 +23,11 @@ body {
 
 .app-container {
     width: 100%;
-    max-width: 1100px;
+    max-width: 1250px;
     padding: 20px;
     box-sizing: border-box;
 }
+
 
 header {
     display: flex;
@@ -50,10 +51,10 @@ header h2 {
 /* Bento Grid */
 .bento-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr;
-    grid-template-rows: auto auto;
+    grid-template-columns: repeat(2, 1fr);
     gap: 16px;
 }
+
 
 .bento-item {
     background: var(--card-bg);
@@ -67,22 +68,26 @@ header h2 {
 
 /* Hero Canvas Section */
 .hero-canvas {
-    grid-row: span 2;
+    grid-column: 1 / -1;
     padding: 0;
     overflow: hidden;
     display: flex;
     justify-content: center;
     align-items: center;
-    background: linear-gradient(135deg, #63a4ff 0%, #83eaf1 100%);
+    background: transparent;
     position: relative;
+    aspect-ratio: 16 / 9;
 }
+
+
 
 #simCanvas {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
 }
+
 
 /* Admin Section Logic */
 #adminSection,
@@ -92,9 +97,10 @@ header h2 {
 
 .admin-mode #adminSection {
     display: block;
-    grid-column: span 2;
+    grid-column: 1 / -1;
     animation: slideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 
 .admin-mode .admin-only {
     display: inline-block;

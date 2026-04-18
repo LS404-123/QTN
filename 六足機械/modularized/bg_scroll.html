@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>無縫捲動背景 - 最終優化版</title>
+    <style>
+        :root {
+            --bg-color: #f0f4f8;
+            --accent-color: #D4E7C5;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #canvas-container {
+            padding: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100vw;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .scroll-box {
+            width: 800px;
+            height: 450px;
+            position: relative;
+            background: #fff;
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow:
+                0 20px 50px rgba(0, 0, 0, 0.1),
+                0 5px 15px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            flex-shrink: 0;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .overlay {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 20px 25px;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            color: #333;
+            width: 260px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+            margin-left: 30px;
+        }
+
+        .overlay h1 {
+            margin: 0 0 10px 0;
+            font-size: 1rem;
+            color: #2c3e50;
+        }
+
+        .control-group {
+            margin-bottom: 12px;
+        }
+
+        .control-group label {
+            display: block;
+            font-size: 0.8rem;
+            margin-bottom: 4px;
+            color: #666;
+        }
+
+        .control-group input {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .control-group span {
+            float: right;
+            font-weight: bold;
+            color: #23BF76;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="canvas-container">
+        <div class="scroll-box" id="container">
+            <canvas id="bgCanvas"></canvas>
+        </div>
+        <div class="overlay">
+            <h1>視差控制面板 (16:9)</h1>
+            <div class="control-group">
+                <label>Hill 2 (遠) <span id="v2">0.4</span></label>
+                <input type="range" id="s2" min="0" max="4" step="0.1" value="0.4">
+            </div>
+            <div class="control-group">
+                <label>Hill 1 (近) <span id="v1">0.8</span></label>
+                <input type="range" id="s1" min="0" max="6" step="0.1" value="0.8">
+            </div>
+            <div class="control-group">
+                <label>Ground (同步) <span id="vg">2.0</span></label>
+                <input type="range" id="sg" min="0" max="10" step="0.1" value="2.0">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * 視差背景核心參數 (使用者可在此快速調整)
+         */
+        const PARALLAX_CONFIG = {
+            speeds: {
+                hill2: 0.05,    // 遠山速度
+                hill1: 0.1,     // 近山速度
+                ground: 0.2,    // 地面與草地速度 (同步)
+                cloud: 0.1      // 雲朵基礎速度
+            },
+            limits: {
+                maxClouds: 5,
+                maxTrees: 12
+            },
+            colors: {
+                sky: '#C1E8F9',
+                activeAreaLine: 'rgba(0, 0, 0, 0.8)'
+            }
+        };
+
+        /**
+         * 資源路徑清單
+         */
+        const RESOURCES = {
+            layers: [
+                { path: '../SVG/bg/hill/hill2.svg', type: 'hill2' },
+                { path: '../SVG/bg/hill/hill1.svg', type: 'hill1' },
+                { path: '../SVG/bg/road/ground3.svg', type: 'ground' },
+                { path: '../SVG/bg/road/ground2.svg', type: 'ground' },
+                { path: '../SVG/bg/road/ground1.svg', type: 'ground' }
+            ],
+            clouds: [
+                '../SVG/bg/cloud/cloud1.svg',
+                '../SVG/bg/cloud/cloud2.svg',
+                '../SVG/bg/cloud/cloud3.svg'
+            ],
+            trees: [
+                '../SVG/bg/tree/tree1.svg',
+                '../SVG/bg/tree/tree2.svg',
+                '../SVG/bg/tree/tree3.svg'
+            ],
+            sun: '../SVG/bg/sun/sun.svg'
+        };
+
+        // --- 基礎類別與實體 ---
+
+        class Sprite {
+            constructor(image, x = 0, y = 0, scale = 1.0) {
+                this.image = image;
+                this.x = x;
+                this.y = y;
+                this.scale = scale;
+            }
+
+            getDimensions(globalScale) {
+                return {
+                    w: this.image.naturalWidth * globalScale * this.scale,
+                    h: this.image.naturalHeight * globalScale * this.scale
+                };
+            }
+
+            isOffScreen(globalScale) {
+                const { w } = this.getDimensions(globalScale);
+                return this.x + w < 0;
+            }
+        }
+
+        class BackgroundScroller extends Sprite {
+            constructor(image, type) {
+                super(image);
+                this.type = type;
+                this.speed = PARALLAX_CONFIG.speeds[this.type] || 0;
+                this.scrollX = 0;
+            }
+
+            updateSpeed(newSpeed) {
+                this.speed = newSpeed;
+            }
+
+            draw(ctx, canvasWidth, canvasHeight, targetBottomPercent = 1.0, globalScale = 1.0) {
+                const { w, h } = this.getDimensions(globalScale);
+                this.scrollX = (this.scrollX + this.speed) % w;
+
+                const yPos = (canvasHeight * targetBottomPercent) - h;
+                const overlap = 1.5;
+
+                for (let x = -this.scrollX; x < canvasWidth; x += w) {
+                    ctx.drawImage(this.image, x, yPos, w + overlap, h);
+                }
+            }
+        }
+
+        class MovingEntity extends Sprite {
+            constructor(image, x, y, speed, scale, renderIndex) {
+                super(image, x, y, scale);
+                this.speed = speed;
+                this.renderIndex = renderIndex;
+            }
+
+            update(customSpeed) {
+                this.x -= (customSpeed !== undefined ? customSpeed : this.speed);
+            }
+
+            draw(ctx, canvasWidth, canvasHeight, globalScale, yPosOverride) {
+                const { w, h } = this.getDimensions(globalScale);
+                const y = yPosOverride !== undefined ? yPosOverride - h : this.y;
+                ctx.drawImage(this.image, this.x, y, w, h);
+            }
+        }
+
+        // --- 核心變數 ---
+
+        const canvas = document.getElementById('bgCanvas');
+        const container = document.getElementById('container');
+        const ctx = canvas.getContext('2d', { alpha: false });
+
+        let layers = [];
+        let cloudImages = [];
+        let treeImages = [];
+        let sunImage = null;
+
+        let activeClouds = [];
+        let activeTrees = [];
+        let nextTreeSpacing = 120;
+        let nextCloudSpacing = 150;
+
+        // --- 初始化與控制 ---
+
+        async function init() {
+            // 載入所有資源
+            const [bgImgs, clImgs, trImgs, sImg] = await Promise.all([
+                Promise.all(RESOURCES.layers.map(l => loadImage(l.path))),
+                Promise.all(RESOURCES.clouds.map(path => loadImage(path))),
+                Promise.all(RESOURCES.trees.map(path => loadImage(path))),
+                loadImage(RESOURCES.sun)
+            ]);
+
+            layers = bgImgs.map((img, i) => new BackgroundScroller(img, RESOURCES.layers[i].type));
+            cloudImages = clImgs;
+            treeImages = trImgs;
+            sunImage = sImg;
+
+            setupControls();
+            resize();
+
+            // 初始填充
+            const rect = container.getBoundingClientRect();
+            const horizon = getHorizon(rect);
+            const roadTop = getRoadTop(rect);
+
+            prePopulateClouds(rect, horizon);
+            prePopulateTrees(rect, horizon, roadTop);
+
+            animate();
+        }
+
+        function setupControls() {
+            const mappings = { s2: 'hill2', s1: 'hill1', sg: 'ground' };
+            Object.keys(mappings).forEach(id => {
+                const slider = document.getElementById(id);
+                const display = document.getElementById(id.replace('s', 'v'));
+
+                slider.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    if (display) display.innerText = val.toFixed(1);
+
+                    const type = mappings[id];
+                    PARALLAX_CONFIG.speeds[type] = val; // 更新全域配置
+                    layers.filter(l => l.type === type).forEach(l => l.updateSpeed(val));
+                });
+            });
+        }
+
+        // --- 輔助工具 ---
+
+        function loadImage(path) {
+            return new Promise(resolve => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.src = path;
+            });
+        }
+
+        function resize() {
+            const rect = container.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+        }
+
+        function getGlobalScale(rect) {
+            const baseLayer = layers.find(l => l.type === 'ground');
+            return baseLayer ? rect.width / baseLayer.image.naturalWidth : 1.0;
+        }
+
+        function getHorizon(rect) {
+            const baseLayer = layers.find(l => l.type === 'ground');
+            if (!baseLayer) return 0.7;
+            const hOnCanvas = baseLayer.image.naturalHeight * getGlobalScale(rect);
+            return 1.0 - (hOnCanvas / rect.height);
+        }
+
+        function getRoadTop(rect) {
+            const roadLayer = layers.filter(l => l.type === 'ground')[1]; // 通常是 ground2
+            if (!roadLayer) return 0.68;
+            const hOnCanvas = roadLayer.image.naturalHeight * getGlobalScale(rect);
+            return 1.0 - (hOnCanvas / rect.height);
+        }
+
+        // --- 生成邏輯 ---
+
+        function prePopulateClouds(rect, horizon) {
+            for (let i = 0; i < PARALLAX_CONFIG.limits.maxClouds; i++) {
+                spawnCloud(rect, horizon, true);
+            }
+        }
+
+        function spawnCloud(rect, horizon, randomX = false) {
+            if (activeClouds.length >= PARALLAX_CONFIG.limits.maxClouds) return;
+
+            const rightmostX = activeClouds.reduce((max, c) => Math.max(max, c.x), -1000);
+            if (randomX || rightmostX < rect.width - nextCloudSpacing) {
+                const img = cloudImages[Math.floor(Math.random() * cloudImages.length)];
+                const x = randomX ? Math.random() * rect.width : rect.width;
+                const y = -10 + Math.random() * ((horizon * rect.height) * 0.3 + 10);
+                const speed = PARALLAX_CONFIG.speeds.cloud * (0.8 + Math.random() * 0.4);
+                const scale = 0.4 + Math.random() * 0.5;
+                const renderIndex = Math.random() < 0.3 ? 0.5 : 1.5;
+
+                activeClouds.push(new MovingEntity(img, x, y, speed, scale, renderIndex));
+                nextCloudSpacing = 100 + Math.random() * 200;
+            }
+        }
+
+        function prePopulateTrees(rect, horizon, roadTop) {
+            const totalGap = roadTop - horizon;
+            const activeHorizon = horizon + totalGap * 0.3;
+            const activeRoadTop = roadTop - totalGap * 0.1;
+            const bandHeight = (activeRoadTop - activeHorizon) / 3;
+
+            for (let i = 0; i < 5; i++) {
+                const x = rect.width * i / 5 + 20;
+                addTree(x, activeHorizon, bandHeight, i % 3);
+            }
+        }
+
+        function spawnTree(rect, horizon) {
+            if (activeTrees.length >= PARALLAX_CONFIG.limits.maxTrees) return;
+
+            const rightmostX = activeTrees.reduce((max, t) => Math.max(max, t.x), -1000);
+            if (rightmostX < rect.width - nextTreeSpacing) {
+                const roadTop = getRoadTop(rect);
+                const totalGap = roadTop - horizon;
+                const bandHeight = (roadTop - totalGap * 0.1 - (horizon + totalGap * 0.3)) / 3;
+                const activeHorizon = horizon + totalGap * 0.3;
+
+                // 隨機決定是否生成雙樹
+                const isDouble = Math.random() < 0.6 && activeTrees.length + 1 < PARALLAX_CONFIG.limits.maxTrees;
+
+                if (isDouble) {
+                    const band1 = Math.floor(Math.random() * 3);
+                    let band2 = Math.floor(Math.random() * 3);
+                    if (band1 === band2) band2 = (band1 + 1) % 3; // 確保高度不同
+
+                    addTree(rect.width, activeHorizon, bandHeight, band1);
+                    addTree(rect.width + 30 + Math.random() * 20, activeHorizon, bandHeight, band2);
+                } else {
+                    addTree(rect.width, activeHorizon, bandHeight, Math.floor(Math.random() * 3));
+                }
+                nextTreeSpacing = 80 + Math.random() * 80;
+            }
+        }
+
+        function addTree(x, activeHorizon, bandHeight, bandIdx) {
+            const img = treeImages[bandIdx];
+            const targetBottom = (activeHorizon + bandIdx * bandHeight) + Math.random() * bandHeight;
+            // Tree 綁定到 ground 速度，renderIndex 設為 2.5 (草地之後)
+            activeTrees.push(new MovingEntity(img, x, 0, 0, 1.0, 2.5));
+            activeTrees[activeTrees.length - 1].targetBottomPercent = targetBottom;
+        }
+
+        // --- 主循環 ---
+
+        function animate() {
+            const rect = container.getBoundingClientRect();
+            const globalScale = getGlobalScale(rect);
+            const horizon = getHorizon(rect);
+
+            // 背景清理
+            ctx.fillStyle = PARALLAX_CONFIG.colors.sky;
+            ctx.fillRect(0, 0, rect.width, rect.height);
+
+            // 繪製太陽
+            if (sunImage) {
+                const sunW = sunImage.naturalWidth * globalScale;
+                const sunH = sunImage.naturalHeight * globalScale;
+                ctx.drawImage(sunImage, rect.width - sunW, 0, sunW, sunH);
+            }
+
+            // 更新與生成
+            spawnCloud(rect, horizon);
+            spawnTree(rect, horizon);
+
+            activeClouds.forEach(c => c.update());
+            activeTrees.forEach(t => t.update(PARALLAX_CONFIG.speeds.ground));
+
+            // 過濾螢幕外實體
+            activeClouds = activeClouds.filter(c => !c.isOffScreen(globalScale));
+            activeTrees = activeTrees.filter(t => !t.isOffScreen(globalScale));
+
+            // 排序樹木 (Z-order)
+            activeTrees.sort((a, b) => a.targetBottomPercent - b.targetBottomPercent);
+
+            // 層次渲染
+            layers.forEach((layer, i) => {
+                // 渲染處於該層之間的雲與樹
+                const subIndex = i - 0.5;
+                activeClouds.filter(c => c.renderIndex === subIndex).forEach(c => c.draw(ctx, rect.width, rect.height, globalScale));
+                activeTrees.filter(t => t.renderIndex === subIndex).forEach(t => t.draw(ctx, rect.width, rect.height, globalScale, t.targetBottomPercent * rect.height));
+
+                // 渲染背景層
+                const bottom = (i <= 1) ? horizon : 1.0;
+                layer.draw(ctx, rect.width, rect.height, bottom, globalScale);
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', resize);
+        init();
+    </script>
+</body>
+
+</html>

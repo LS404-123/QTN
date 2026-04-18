@@ -12,11 +12,11 @@ async function loadExternalSVGs() {
     try {
         // 發出 HTTP 請求，取得上一層 SVG 資料夾中的原始檔案
         const [legRes, rodRes, gearboxRes, crankRes, motorRes] = await Promise.all([
-            fetch('../SVG/腳.html'),
-            fetch('../SVG/直杆.html'),
-            fetch('../SVG/齒輪箱.html'),
-            fetch('../SVG/曲柄.html'),
-            fetch('../SVG/馬達.html')
+            fetch('../SVG/robot/腳.html'),
+            fetch('../SVG/robot/直杆.html'),
+            fetch('../SVG/robot/齒輪箱.html'),
+            fetch('../SVG/robot/曲柄.html'),
+            fetch('../SVG/robot/馬達.html')
         ]);
 
         if (!legRes.ok || !rodRes.ok || !gearboxRes.ok || !crankRes.ok || !motorRes.ok) throw new Error(`HTTP 請求狀態異常`);

@@ -156,7 +156,7 @@ let showPaths = false;
 let simSpeed = -0.1;
 let gravityScale = 1.0;
 let povMode = 'world';
-let isAdminMode = false; // Hidden Admin Authority
+let isAdminMode = true; // Hidden Admin Authority
 let overlayAlpha = 0;   // For smooth fade in/out
 let isSlowMo = false;
 

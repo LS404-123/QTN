@@ -186,6 +186,11 @@ let angularVel = 0;
 let isTorqueMode = false;
 let lockedPivot = null;
 let lockedPivotIndex = -1;
+let hopY = 0;       // Dynamic vertical bounce offset
+let hopVel = 0;     // Velocity of the body spring
+let hopStrength = 0.4;
+let hopDamping = 0.85;
+let prevKinematicY = null;
 
 // --- Distance & Speed Tracking Variables ---
 // Physics & Inertia State
@@ -239,7 +244,7 @@ function mapCoords(p) {
         ry = tempY - finalShiftY;
     }
 
-    return { x: cx + rx * scale, y: cy - ry * scale };
+    return { x: cx + rx * scale, y: cy - (ry + hopY) * scale };
 }
 
 function getIntersection(C1, r1, C2, r2) {
@@ -603,6 +608,33 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
                 angularVel = 0;
             }
         }
+
+        // --- 3.5 Dynamic Hop Physics (動態跳動積分) ---
+        const currentKinematicY = -smoothedGround.c;
+        if (prevKinematicY !== null && isPlaying) {
+            // 計算幾何上升速度 (只有上升時會「踢」動彈簧)
+            let liftVel = (currentKinematicY - prevKinematicY) / dt;
+            
+            // 基礎剛性
+            const springStiffness = 0.15;
+            
+            // 速度縮放：速度越快，推動力越強 (平方關係)
+            const speedFactor = Math.pow(Math.abs(simSpeed) * 10, 1.5);
+            
+            // 如果幾何上正在往上推，給予彈簧一個衝量
+            if (liftVel > 0) {
+                hopVel += liftVel * hopStrength * speedFactor;
+            }
+
+            // 彈簧受力公式：Accel = -kx - bv
+            let hopAccel = (-hopY * springStiffness) - (hopVel * (1.0 - hopDamping));
+            hopVel += hopAccel;
+            hopY += hopVel;
+
+            // 安全邊界：防止過度震盪或穿地 (雖然物理上不太會穿地，但視覺上給個保險)
+            if (hopY < -5) { hopY = -5; hopVel = 0; }
+        }
+        prevKinematicY = currentKinematicY;
 
         // 4. Movement Distance Tracking (追蹤地面支點的相對位移)
         let frameDx = 0;
@@ -1162,6 +1194,18 @@ document.getElementById('speedVal').addEventListener('click', () => {
     }
 });
 
+document.getElementById('hopStrengthSlider').addEventListener('input', (e) => {
+    hopStrength = parseFloat(e.target.value);
+    document.getElementById('hopStrengthVal').innerText = hopStrength.toFixed(2);
+    triggerUpdate();
+});
+
+document.getElementById('hopDampingSlider').addEventListener('input', (e) => {
+    hopDamping = parseFloat(e.target.value);
+    document.getElementById('hopDampingVal').innerText = hopDamping.toFixed(2);
+    triggerUpdate();
+});
+
 document.getElementById('angleSlider').addEventListener('input', (e) => {
     let deg = parseInt(e.target.value);
 
@@ -1283,6 +1327,15 @@ function resetParameters() {
     lastCycleX = 0;
     cycleAvgSpeed = 0;
     smoothedSpeed = 0;
+    hopY = 0;
+    hopVel = 0;
+    prevKinematicY = null;
+    hopStrength = 0.4;
+    hopDamping = 0.85;
+    document.getElementById('hopStrengthSlider').value = 0.4;
+    document.getElementById('hopStrengthVal').innerText = "0.40";
+    document.getElementById('hopDampingSlider').value = 0.85;
+    document.getElementById('hopDampingVal').innerText = "0.85";
 
     triggerUpdate();
 }

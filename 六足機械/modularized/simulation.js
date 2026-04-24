@@ -56,8 +56,8 @@ let crankDistances = [6.5, 11.0, 15.5, 20.0];
 let R = crankDistances[0]; // Initial radius for Hole 1
 
 let L_leg = 25.0 * globalScale;
-let L_blue = 55.0 * globalScale;
-let L_foot = (25.0 * globalScale) * (39.17 / 45); // 與視覺設計 (Hole2 to Tip = 39.17) 完全同步
+let L_blue = 55.0 * globalScale; 
+let L_foot = 20.0 * globalScale; // 初始值調回 20.0
 let gearboxShiftX = 0;
 
 // SVG Path globals for dynamic scaling (legSVGPath is already declared in svgs.js)
@@ -73,21 +73,33 @@ function updateLegSVGPath() {
     const footOffsetSVG = (L_foot / (25.0 * globalScale)) * 45.0;
 
     // 定義幾何常數，確保形狀不變
-    const transitionY = 10.67; // 轉折點相對於第二個孔的位移
     const ellipseRY = 13;      // 腳掌橢圓的垂直半徑
     const ellipseRX = 25;      // 腳掌橢圓的水平半徑
-    const transR = 15.5;       // 過渡圓弧半徑
+    const transR = 15.5;       // 過渡圓弧半徑 (匹配用戶設定)
+    const y_chord_offset_svg = 2.457; // large-arc-flag=1 產生的額外高度
+    const curveHeight = transR + ellipseRY + y_chord_offset_svg; // 總曲線高度約 30.96
 
-    // yOff1: 直線段結束與過渡圓弧開始的點
+    // yOff1: 直線段結束與過渡圓弧開始的點 (相對於 Hole 1)
+    // 讓直線段吸收 L_foot 的變化：Hole 2 到腳尖總長為 footOffsetSVG
+    // 扣除掉固定的曲線高度後，剩下的就是直線段長度 (transitionY)
+    const transitionY = Math.max(2, footOffsetSVG - curveHeight);
     const yOff1 = h + transitionY;
+
     // yOff2: 橢圓中心點的 Y 軸位置 (確保腳尖總長度正確)
     const yOff2 = h + (footOffsetSVG - ellipseRY);
 
-    // 安全檢查：防止腳長過短導致幾何重疊
-    const finalY2 = Math.max(yOff2, yOff1 + 2);
+    // 安全檢查：確保 finalY2 與 yOff1 之間維持固定的 transR 距離以保持圓弧形狀
+    const finalY2 = yOff1 + transR;
 
     // 繪製路徑：所有半徑數值 (9, transR, ellipseRX, ellipseRY) 均為常數
-    const legPath = `M 21, 20 A 9,9 0 0, 1 39, 20 L 39, ${20 + yOff1} A ${transR},${transR} 0 0, 0 54.5, ${20 + finalY2} A ${ellipseRX}, ${ellipseRY} 0 1, 1 5.39, ${20 + finalY2} A ${transR},${transR} 0 0, 0 21, ${20 + yOff1} Z`;
+    const legPath = `
+        M 21, 20
+        A 9,9 0 0, 1 39, 20
+        L 39, ${20 + yOff1}
+        A 15.5,15.5 0 0, 0 54.5, ${20 + finalY2}
+        A 25, 13 0 1, 1 5.39, ${20 + finalY2}
+        A 15.5,15.5 0 0, 0 21, ${20 + yOff1}
+        Z`;
     const hole1 = `M 28.5, 20 a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0`;
     const hole2 = `M 28.5, ${20 + h} a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0`;
 
@@ -268,45 +280,40 @@ function extendPoint(P_top, P_bottom, extLen) {
  * @returns {Object}        橢圓腳部與地面碰撞的精確切點 {x, y}
  */
 function getEllipticFootPoint(P_top, P_bottom, m = 0) {
-    // 1. 計算腿部向量與當前物理長度
     const dx = P_bottom.x - P_top.x, dy = P_bottom.y - P_top.y;
     const L_curr = Math.sqrt(dx * dx + dy * dy);
     if (L_curr === 0) return P_bottom;
 
-    // 2. 確定腿部旋轉角度 (phi 為世界坐標夾角)
     const phi = Math.atan2(dy, dx);
-    const rot = phi - Math.PI / 2; // 計算橢圓局部坐標系與世界座標系的旋轉差
+    const rot = phi - Math.PI / 2;
 
-    // 3. 橢圓腳部使用固定比例（基於預設腿長 25*globalScale），不隨 L_leg 變大而變肥
-    const s_fixed = (25.0 * globalScale) / 45.0;
-    const a = 25 * s_fixed;                   // 橢圓長軸半徑 (固定)
-    const b = 13 * s_fixed;                   // 橢圓短軸半徑 (固定)
-    const centerDist = 28.54 * s_fixed;       // 支點到橢圓中心的偏移 (固定)
+    const s_fixed = (25.0 * globalScale) / 45.0; 
+    const a = 24.555 * s_fixed; // 精確匹配 SVG 寬度 (54.5 - 5.39) / 2
+    const b = 13 * s_fixed;
+    
+    // 計算 SVG 中因 large-arc-flag=1 產生的額外垂直高度補償
+    const chord_half_width_svg = 24.555;
+    const y_chord_offset = Math.sqrt(Math.max(0, b*b * (1 - Math.pow(chord_half_width_svg*s_fixed/a, 2))));
+    
+    // 核心修正：考慮到視覺上的足部比單純的 b 還要深 y_chord_offset
+    // 增加 0.2 緩衝確保紅點壓在邊線上
+    const centerDist = L_foot - b - y_chord_offset + (0.2 * globalScale);
 
-    // 4. 在世界坐標系中定位橢圓中心的坐標 (Cx, Cy)
     const Cx = P_bottom.x + (dx / L_curr) * centerDist;
     const Cy = P_bottom.y + (dy / L_curr) * centerDist;
 
-    // 5. 計算地面法線在橢圓局部坐標系中的投影分量
-    // 地面法線向量 n = (-m, 1)，我們將其旋轉至橢圓局部軸向 u, v
     const sinR = Math.sin(rot), cosR = Math.cos(rot);
-    const n_u = sinR - m * cosR;        // 法線在橢圓長軸方向的投影
-    const n_v = cosR + m * sinR;        // 法線在橢圓短軸方向的投影
+    const n_u = sinR - m * cosR;
+    const n_v = cosR + m * sinR;
 
-    // 6. 計算橢圓中心到切線的垂直距離 h (即該方向的支撐半徑)
     const h = Math.sqrt(a * a * n_u * n_u + b * b * n_v * n_v);
 
-    // 7. 計算橢圓「頂部」切點相對於中心的世界坐標位移
-    // 根據橢圓性質，法線為 (n_u, n_v) 的點坐標與 (a^2*n_u, b^2*n_v) 成正比
     const dx_rel_top = (a * a * n_u * cosR - b * b * n_v * sinR) / h;
     const dy_rel_top = (a * a * n_u * sinR + b * b * n_v * cosR) / h;
 
-    // 8. 鏡像轉換以獲得「底部」實際地面接觸點
-    // 由於我們需要的是地面接觸點而非頂部切點，需取鏡像反向向量
     const dx_cp = -dx_rel_top;
     const dy_cp = -dy_rel_top;
 
-    // 回傳包含水平與垂直校正後的最終接觸點位置
     return { x: Cx + dx_cp, y: Cy + dy_cp };
 }
 
@@ -331,7 +338,7 @@ function getLegPositions(angle, groundM = 0) {
 // --- Drawing Core ---
 
 function drawSVGLink(p1, p2, svgPath, h1x, h1y, h2x, h2y, strokeColor, fillColor, isFar, targetCtx = ctx) {
-    if (!p1 || !p2) return;
+    if (!p1 || !p2 || !svgPath) return; // 確保路徑物件已存在
     const m1 = mapCoords(p1), m2 = mapCoords(p2);
     const dx = m2.x - m1.x, dy = m2.y - m1.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1227,7 +1234,7 @@ function resetParameters() {
     theta = 0;
     L_leg = 25.0 * globalScale;
     L_blue = 55.0 * globalScale;
-    L_foot = (25.0 * globalScale) * (39.17 / 45);
+    L_foot = 20.0 * globalScale;
     gearboxShiftX = 0;
     S = 48.0 * globalScale;
     Pf.x = -S;
@@ -1252,8 +1259,8 @@ function resetParameters() {
     document.getElementById('sVal').innerText = "48";
 
     // L_foot sync
-    document.getElementById('lFootSlider').value = 21.8;
-    document.getElementById('lFootVal').innerText = "21.8";
+    document.getElementById('lFootSlider').value = 20.0;
+    document.getElementById('lFootVal').innerText = "20.0";
 
     // 3. Update Hole Buttons UI
     holeButtons.forEach((btn, idx) => {

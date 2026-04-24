@@ -226,8 +226,10 @@ let prevTheta = 0;
 
 /**
  * Transforms internal coordinates to screen space based on Camera POV
+ * @param {Object} p - {x, y} coordinate
+ * @param {boolean} includeHop - Whether to apply the dynamic bounce offset
  */
-function mapCoords(p) {
+function mapCoords(p, includeHop = true) {
     let rx = p.x;
     let ry = p.y;
 
@@ -244,7 +246,7 @@ function mapCoords(p) {
         ry = tempY - finalShiftY;
     }
 
-    return { x: cx + rx * scale, y: cy - (ry + hopY) * scale };
+    return { x: cx + rx * scale, y: cy - (ry + (includeHop ? hopY : 0)) * scale };
 }
 
 function getIntersection(C1, r1, C2, r2) {
@@ -381,13 +383,13 @@ function drawLine(p1, p2, color, width, targetCtx = ctx) {
     targetCtx.stroke();
 }
 
-function drawPath(pathArray, color, dash) {
+function drawPath(pathArray, color, dash, includeHop = true) {
     if (!showPaths || pathArray.length < 2) return;
     ctx.beginPath();
-    const start = mapCoords(pathArray[0]);
+    const start = mapCoords(pathArray[0], includeHop);
     ctx.moveTo(start.x, start.y);
     for (let i = 1; i < pathArray.length; i++) {
-        const pt = mapCoords(pathArray[i]);
+        const pt = mapCoords(pathArray[i], includeHop);
         ctx.lineTo(pt.x, pt.y);
     }
     ctx.strokeStyle = color;
@@ -397,8 +399,9 @@ function drawPath(pathArray, color, dash) {
     ctx.setLineDash([]);
 }
 
-function drawPoint(p, color, radius, targetCtx = ctx) {
-    const mp = mapCoords(p);
+function drawPoint(p, color, radius, targetCtx = ctx, includeHop = true) {
+    if (!p) return;
+    const mp = mapCoords(p, includeHop);
     targetCtx.beginPath();
     targetCtx.arc(mp.x, mp.y, radius, 0, Math.PI * 2);
     targetCtx.fillStyle = color;
@@ -469,7 +472,8 @@ function renderSide(data, isFar, targetCtx = ctx) {
 function drawFootShadow(footPos, ground) {
     // 計算足部在地面上的投影點 (垂直向下)
     const shadowY = ground.m * footPos.x + ground.c;
-    const dist = Math.abs(footPos.y - shadowY);
+    // 核心修正：距離計算需包含 hopY，使陰影能反應跳動高度
+    const dist = Math.abs(footPos.y + hopY - shadowY);
 
     // 隨高度增加而變淡並縮小
     const maxDist = 35 * globalScale;
@@ -482,8 +486,8 @@ function drawFootShadow(footPos, ground) {
     const width = baseWidth * sizeMult;
     const height = baseHeight * sizeMult;
 
-    // 將地面點轉換為屏幕坐標
-    const pos = mapCoords({ x: footPos.x, y: shadowY });
+    // 將地面點轉換為屏幕坐標 (地面不跟隨跳動)
+    const pos = mapCoords({ x: footPos.x, y: shadowY }, false);
 
     ctx.save();
     ctx.translate(pos.x, pos.y);
@@ -767,8 +771,8 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         ctx.beginPath();
         if (povMode === 'robot') {
             const gX1 = -1000, gX2 = 1000;
-            const gm1 = mapCoords({ x: gX1, y: smoothedGround.m * gX1 + smoothedGround.c });
-            const gm2 = mapCoords({ x: gX2, y: smoothedGround.m * gX2 + smoothedGround.c });
+            const gm1 = mapCoords({ x: gX1, y: smoothedGround.m * gX1 + smoothedGround.c }, false);
+            const gm2 = mapCoords({ x: gX2, y: smoothedGround.m * gX2 + smoothedGround.c }, false);
             ctx.moveTo(gm1.x, gm1.y);
             ctx.lineTo(gm2.x, gm2.y);
         } else {
@@ -780,13 +784,13 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         ctx.lineWidth = 3;
         ctx.stroke();
 
-        drawPath(paths.far.f, 'rgba(239, 68, 68, 0.2)', [3, 3]);
-        drawPath(paths.far.m, 'rgba(34, 197, 94, 0.2)', [3, 3]);
-        drawPath(paths.far.r, 'rgba(59, 130, 246, 0.2)', [3, 3]);
+        drawPath(paths.far.f, 'rgba(239, 68, 68, 0.2)', [3, 3], false);
+        drawPath(paths.far.m, 'rgba(34, 197, 94, 0.2)', [3, 3], false);
+        drawPath(paths.far.r, 'rgba(59, 130, 246, 0.2)', [3, 3], false);
 
-        drawPath(paths.near.f, 'rgba(239, 68, 68, 0.7)', [5, 5]);
-        drawPath(paths.near.m, 'rgba(34, 197, 94, 0.7)', [5, 5]);
-        drawPath(paths.near.r, 'rgba(59, 130, 246, 0.7)', [5, 5]);
+        drawPath(paths.near.f, 'rgba(239, 68, 68, 0.7)', [5, 5], false);
+        drawPath(paths.near.m, 'rgba(34, 197, 94, 0.7)', [5, 5], false);
+        drawPath(paths.near.r, 'rgba(59, 130, 246, 0.7)', [5, 5], false);
 
         // --- Render Far Side (Grouped Transparency) ---
         // 1. Draw to off-screen buffer with OPAQUE but FADED colors
@@ -950,8 +954,8 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             ctx.save();
             ctx.globalAlpha = overlayAlpha;
             if (isTorqueMode && lockedPivot) {
-                drawPoint(lockedPivot, '#ef4444', 6);
-                const mp = mapCoords(lockedPivot);
+                drawPoint(lockedPivot, '#ef4444', 6, ctx, false);
+                const mp = mapCoords(lockedPivot, false);
                 ctx.beginPath();
                 ctx.arc(mp.x, mp.y, 14, 0, Math.PI * 2);
                 ctx.strokeStyle = '#ef4444';
@@ -960,8 +964,8 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             } else if (prevGroundedFeetIndices && prevGroundedFeetIndices.length > 0) {
                 for (let idx of prevGroundedFeetIndices) {
                     let f = allFeet[idx];
-                    drawPoint(f, '#ef4444', 5);
-                    const mp = mapCoords(f);
+                    drawPoint(f, '#ef4444', 5, ctx, false);
+                    const mp = mapCoords(f, false);
                     ctx.beginPath();
                     ctx.arc(mp.x, mp.y, 10, 0, Math.PI * 2);
                     ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';

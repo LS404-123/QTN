@@ -618,12 +618,14 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         if (prevKinematicY !== null && isPlaying) {
             // 計算幾何上升速度 (只有上升時會「踢」動彈簧)
             let liftVel = (currentKinematicY - prevKinematicY) / dt;
+            // 穩定化：限制單次衝量上限
+            liftVel = Math.max(0, Math.min(liftVel, 15));
 
             // 基礎剛性
             const springStiffness = 0.15;
 
-            // 速度縮放：速度越快，推動力越強 (平方關係)
-            const speedFactor = Math.pow(Math.abs(simSpeed), 1.5);
+            // 速度縮放：速度越快，推動力越強 (線性關係較為穩定)
+            const speedFactor = Math.min(3.0, Math.abs(simSpeed) * 0.5);
 
             // 如果幾何上正在往上推，給予彈簧一個衝量
             if (liftVel > 0) {
@@ -631,12 +633,17 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             }
 
             // 彈簧受力公式：Accel = -kx - bv
+            // 阻尼系數調整為 1 - damping
             let hopAccel = (-hopY * springStiffness) - (hopVel * (1.0 - hopDamping));
             hopVel += hopAccel;
             hopY += hopVel;
 
-            // 安全邊界：防止過度震盪或穿地 (雖然物理上不太會穿地，但視覺上給個保險)
+            // 穩定化：限制速度上限
+            hopVel = Math.max(-20, Math.min(hopVel, 20));
+
+            // 安全邊界：防止過度震盪或飛走
             if (hopY < -5) { hopY = -5; hopVel = 0; }
+            if (hopY > 50) { hopY = 50; hopVel = 0; }
         }
         prevKinematicY = currentKinematicY;
 

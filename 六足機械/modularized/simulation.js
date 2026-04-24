@@ -56,7 +56,7 @@ let crankDistances = [6.5, 11.0, 15.5, 20.0];
 let R = crankDistances[0]; // Initial radius for Hole 1
 
 let L_leg = 25.0 * globalScale;
-let L_blue = 55.0 * globalScale; 
+let L_blue = 55.0 * globalScale;
 let L_foot = 20.0 * globalScale; // 初始值調回 20.0
 let gearboxShiftX = 0;
 
@@ -292,14 +292,14 @@ function getEllipticFootPoint(P_top, P_bottom, m = 0) {
     const phi = Math.atan2(dy, dx);
     const rot = phi - Math.PI / 2;
 
-    const s_fixed = (25.0 * globalScale) / 45.0; 
+    const s_fixed = (25.0 * globalScale) / 45.0;
     const a = 24.555 * s_fixed; // 精確匹配 SVG 寬度 (54.5 - 5.39) / 2
     const b = 13 * s_fixed;
-    
+
     // 計算 SVG 中因 large-arc-flag=1 產生的額外垂直高度補償
     const chord_half_width_svg = 24.555;
-    const y_chord_offset = Math.sqrt(Math.max(0, b*b * (1 - Math.pow(chord_half_width_svg*s_fixed/a, 2))));
-    
+    const y_chord_offset = Math.sqrt(Math.max(0, b * b * (1 - Math.pow(chord_half_width_svg * s_fixed / a, 2))));
+
     // 核心修正：考慮到視覺上的足部比單純的 b 還要深 y_chord_offset
     // 增加 0.2 緩衝確保紅點壓在邊線上
     const centerDist = L_foot - b - y_chord_offset + (0.2 * globalScale);
@@ -614,13 +614,13 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         if (prevKinematicY !== null && isPlaying) {
             // 計算幾何上升速度 (只有上升時會「踢」動彈簧)
             let liftVel = (currentKinematicY - prevKinematicY) / dt;
-            
+
             // 基礎剛性
             const springStiffness = 0.15;
-            
+
             // 速度縮放：速度越快，推動力越強 (平方關係)
-            const speedFactor = Math.pow(Math.abs(simSpeed) * 10, 1.5);
-            
+            const speedFactor = Math.pow(Math.abs(simSpeed) * 5, 1.5);
+
             // 如果幾何上正在往上推，給予彈簧一個衝量
             if (liftVel > 0) {
                 hopVel += liftVel * hopStrength * speedFactor;

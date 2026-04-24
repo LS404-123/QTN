@@ -619,7 +619,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             const springStiffness = 0.15;
 
             // 速度縮放：速度越快，推動力越強 (平方關係)
-            const speedFactor = Math.pow(Math.abs(simSpeed) * 5, 1.5);
+            const speedFactor = Math.pow(Math.abs(simSpeed), 1.5);
 
             // 如果幾何上正在往上推，給予彈簧一個衝量
             if (liftVel > 0) {

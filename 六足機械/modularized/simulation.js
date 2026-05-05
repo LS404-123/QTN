@@ -528,7 +528,11 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
     const near = getLegPositions(currentTheta, smoothedGround.m);
     const far = getLegPositions(currentTheta + phaseDiff, smoothedGround.m);
 
+    // 更新全域衝突狀態
+    isClashing = (near === null || far === null);
+
     if (near && far) {
+
         const allFeet = [
             near.foot_f, near.foot_m, near.foot_r,
             far.foot_f, far.foot_m, far.foot_r
@@ -1001,7 +1005,12 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         drawOverlayStats();
         ctx.restore();
     }
+    // 紀錄數據用於 AI 診斷
+    if (typeof recordAnalyticsData === 'function') {
+        recordAnalyticsData();
+    }
 }
+
 
 function drawOverlayStats() {
     const w = 260;
@@ -1367,11 +1376,91 @@ for (let i = 1; i <= 4; i++) {
 
             currentCrankHoleY = holeYs[i - 1];
             R = crankDistances[i - 1];
+            
+            // 通知 AI 孔位變更 (R 變更)
+            if (window.onSliderChanged) {
+                window.onSliderChanged('crankHole', i);
+            }
+
             paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
             triggerUpdate();
         });
+
     }
 }
 
-// Init
+// --- AI Diagnostic Support ---
+let hopYHistory = [];
+let isClashing = false; // 全域衝突旗標
+const MAX_ANALYTICS_WINDOW = 120; // 2 seconds at 60fps
+
+/**
+ * 萃取適合國小生的簡化指標
+ */
+function getSimplifiedAnalytics() {
+    const recentHops = hopYHistory.slice(-MAX_ANALYTICS_WINDOW);
+    const hopRange = recentHops.length > 0 ? (Math.max(...recentHops) - Math.min(...recentHops)) : 0;
+    
+    // 使用正確的全域旗標判定
+    const hasConflict = isClashing;
+
+    let stability = "優";
+
+    if (hasConflict) stability = "幾何衝突 (卡死)";
+    else if (hopRange > 10) stability = "差";
+    else if (hopRange > 5) stability = "普通";
+
+    return {
+        params: {
+            legLength: Math.round(L_leg / globalScale),
+            footLength: Math.round(L_foot / globalScale),
+            blueLink: Math.round(L_blue / globalScale),
+            bodyWidth: Math.round(S / globalScale),
+            crankRadius: Math.round(R), // R 通常沒縮放，但取整較美觀
+            phaseDiff: Math.round(phaseDiff),
+            speed: Math.round(simSpeed * 10) / 10
+        },
+
+        physics: {
+            hopRange: hasConflict ? "N/A" : hopRange.toFixed(1),
+            stability: stability,
+            hasConflict: hasConflict 
+        },
+        isMoving: !hasConflict && Math.abs(simSpeed) > 0
+    };
+}
+
+
+
+function recordAnalyticsData() {
+    if (typeof hopY !== 'undefined') {
+        hopYHistory.push(hopY);
+        if (hopYHistory.length > MAX_ANALYTICS_WINDOW) hopYHistory.shift();
+    }
+}
+
+// --- 監聽滑桿變動並通知 AI ---
+
+// --- 監聽滑桿變動並通知 AI ---
+const slidersToWatch = [
+    'lLegSlider', 'lFootSlider', 'lBlueSlider', 'sSlider', 'gearboxShiftSlider', 'phaseSlider', 'simSpeedSlider', 'speedSlider'
+];
+
+slidersToWatch.forEach(id => {
+    const slider = document.getElementById(id);
+    if (slider) {
+        // 改用 change 事件，放開滑鼠後才觸發 AI
+        slider.addEventListener('change', () => {
+            if (window.onSliderChanged) {
+                window.onSliderChanged(id, slider.value);
+            }
+        });
+    }
+});
+
+
+// 最後啟動循環
 animate();
+
+
+

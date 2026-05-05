@@ -118,13 +118,57 @@
                     </div>
                 </div>
             </section>
+            <!-- AI Diagnostic Center (Wide Bento Item) -->
+            <section class="bento-item ai-chat-wide">
+                <div class="section-header">
+                    <span class="section-title">🤖 小六 AI 診斷助手</span>
+                    <div class="ai-status">
+                        <span class="status-dot"></span>
+                        <span class="status-text">觀察中...</span>
+                    </div>
+
+
+
+                </div>
+                <div id="chatHistory" class="chat-history">
+                    <div class="message ai-msg">
+                        <div class="msg-avatar">🤖</div>
+                        <div class="msg-content">嘿！我是小六，我會在這裡幫你觀察機器人的走路狀況喔！試著調整看看滑桿吧！✨</div>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="userInput" placeholder="問問小六關於機器人的事..." autocomplete="off">
+                    <button id="sendBtn" class="btn-primary">送出</button>
+                </div>
+            </section>
+
+            <!-- Debug Console - Moved to bottom to avoid squeezing chat -->
+            <section class="bento-item debug-console-full">
+                <div class="debug-header">
+                    <span>🕵️ 診斷傳輸日誌</span>
+                    <div class="debug-nav">
+                        <button id="prevLog" class="btn-mini">◀</button>
+                        <span id="logCounter">0 / 0</span>
+                        <button id="nextLog" class="btn-mini">▶</button>
+                    </div>
+                </div>
+                <div id="debugCardContainer" class="debug-card-container">
+                    <div class="debug-card empty">目前尚無通訊紀錄</div>
+                </div>
+            </section>
+
         </main>
     </div>
 
-    <!-- 載入外部 SVG 原始幾何與模擬器邏輯 -->
+
+
+    <!-- 載入外部內容 -->
+    <script src="secrets.js"></script>
     <script src="svgs.js"></script>
     <script src="bg_scroll.js"></script>
     <script src="simulation.js"></script>
+    <script src="chat.js"></script>
 </body>
+
 
 </html>

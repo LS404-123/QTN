@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-hant">
+<head>
+    <meta charset="UTF-8">
+    <title>直杆 (Straight Rod) SVG</title>
+    <style>
+        body {
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        svg {
+            background-color: white;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            /* Scale uniformly for visibility in browser while keeping 1:1 internal precise units */
+            height: 90vh; 
+            max-width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <!-- 
+        1 unit = 1 mm 
+        Padding: 5mm around the rod
+    -->
+    <svg viewBox="0 0 20 112" xmlns="http://www.w3.org/2000/svg">
+        <!-- 
+            Blueprint Dimensions:
+            Width: 10.00 mm (Radius 5.00 mm)
+            Hole Diameter: 3.00 mm (Radius 1.50 mm)
+            Hole Spacing: 92.00 mm
+            Total Height: 102.00 mm
+        -->
+        
+        <!-- 外輪廓 (Outer Contour) -->
+        <path d="
+            M 5, 10
+            A 5,5 0 0, 1 15, 10
+            L 15, 102
+            A 5,5 0 0, 1 5, 102
+            Z" 
+            fill="none" 
+            stroke="#ff9800" 
+            stroke-width="0.2" 
+            stroke-linejoin="round" />
+        
+        <!-- 頂部與底部孔洞 (Mounting Holes - D=3.00mm) -->
+        <circle cx="10" cy="10" r="1.5" fill="none" stroke="#ff9800" stroke-width="0.2" />
+        <circle cx="10" cy="102" r="1.5" fill="none" stroke="#ff9800" stroke-width="0.2" />
+    </svg>
+</body>
+</html>

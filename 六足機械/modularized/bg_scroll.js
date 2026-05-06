@@ -1,12 +1,13 @@
 /**
  * bg_scroll.js - 🏞️ 動態背景滾動引擎 (Vite Raw Mode)
- * 使用 Vite 的 ?raw 功能預載入 SVG，解決部署後的 404 問題。
+ * 完全對齊 f71e526 版本的座標與參數
  */
 
 import hill2Svg from '../SVG/bg/hill/hill2.svg?raw';
 import hill1Svg from '../SVG/bg/hill/hill1.svg?raw';
-import ground1Svg from '../SVG/bg/road/ground1.svg?raw';
+import ground3Svg from '../SVG/bg/road/ground3.svg?raw';
 import ground2Svg from '../SVG/bg/road/ground2.svg?raw';
+import ground1Svg from '../SVG/bg/road/ground1.svg?raw';
 import sunSvg from '../SVG/bg/sun/sun.svg?raw';
 import cloud1Svg from '../SVG/bg/cloud/cloud1.svg?raw';
 import cloud2Svg from '../SVG/bg/cloud/cloud2.svg?raw';
@@ -15,7 +16,7 @@ import tree1Svg from '../SVG/bg/tree/tree1.svg?raw';
 import tree2Svg from '../SVG/bg/tree/tree2.svg?raw';
 import tree3Svg from '../SVG/bg/tree/tree3.svg?raw';
 
-class BGScroller {
+export class BGScroller {
     constructor(canvasId, options = {}) {
         this.canvas = document.getElementById(canvasId);
         if (!this.canvas) return;
@@ -23,18 +24,18 @@ class BGScroller {
 
         this.config = {
             speeds: {
-                hill2: 0.2,
-                hill1: 0.5,
-                ground: 1.2,
-                cloud: 0.3,
+                hill2: 0.05,
+                hill1: 0.1,
+                ground: 0.2,
+                cloud: 0.1,
                 ...options.speeds
             },
             colors: {
-                sky: '#e0f2fe',
+                sky: '#C1E8F9', // 還原舊版天空顏色
                 ...options.colors
             },
             limits: {
-                maxClouds: 8,
+                maxClouds: 5,
                 maxTrees: 12
             }
         };
@@ -44,28 +45,27 @@ class BGScroller {
         this.layers = [];
         this.activeClouds = [];
         this.activeTrees = [];
-        this.nextCloudSpacing = 0;
-        this.nextTreeSpacing = 0;
+        this.nextCloudSpacing = 150;
+        this.nextTreeSpacing = 120;
 
         this.init();
     }
 
     async init() {
         try {
-            // 將 SVG 字串轉換為可直接使用的 Image 物件
             const svgToImg = (svgText) => new Promise((res, rej) => {
                 const img = new Image();
                 img.onload = () => res(img);
                 img.onerror = rej;
-                // 使用 Data URL 載入 SVG 內容
                 img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgText);
             });
 
-            const [hill2, hill1, ground1, ground2, sun, c1, c2, c3, t1, t2, t3] = await Promise.all([
+            const [hill2, hill1, ground3, ground2, ground1, sun, c1, c2, c3, t1, t2, t3] = await Promise.all([
                 svgToImg(hill2Svg),
                 svgToImg(hill1Svg),
-                svgToImg(ground1Svg),
+                svgToImg(ground3Svg),
                 svgToImg(ground2Svg),
+                svgToImg(ground1Svg),
                 svgToImg(sunSvg),
                 svgToImg(cloud1Svg),
                 svgToImg(cloud2Svg),
@@ -79,12 +79,13 @@ class BGScroller {
             this.cloudImages = [c1, c2, c3];
             this.treeImages = [t1, t2, t3];
 
-            // 建立背景層
+            // 建立背景層 (順序必須與舊版一致)
             this.layers = [
                 new BackgroundLayer(hill2, 'hill2', this.config.speeds),
                 new BackgroundLayer(hill1, 'hill1', this.config.speeds),
-                new BackgroundLayer(ground1, 'ground', this.config.speeds),
-                new BackgroundLayer(ground2, 'ground', this.config.speeds)
+                new BackgroundLayer(ground3, 'ground', this.config.speeds),
+                new BackgroundLayer(ground2, 'ground', this.config.speeds),
+                new BackgroundLayer(ground1, 'ground', this.config.speeds)
             ];
 
             const horizon = this.getHorizon();
@@ -95,14 +96,15 @@ class BGScroller {
             this.isInitialized = true;
             if (!this.manualMode) this.animate();
             
-            console.log("[BGScroller] 背景資源載入成功 (Vite Raw Mode)");
+            console.log("[BGScroller] 背景資源載入成功 (參數已還原)");
         } catch (err) {
             console.error("[BGScroller] 資源載入失敗:", err);
         }
     }
 
     getGlobalScale() {
-        return (this.canvas.height / 600) * 1.5;
+        const baseLayer = this.layers.find(l => l.type === 'ground');
+        return baseLayer ? this.canvas.width / baseLayer.image.naturalWidth : 1.0;
     }
 
     getHorizon() {
@@ -146,7 +148,6 @@ class BGScroller {
             const renderIndex = Math.random() < 0.3 ? 0.5 : 1.5;
 
             this.activeClouds.push(new MovingEntity(img, x, y, speed, scale, renderIndex));
-            this.nextCloudSpacing = 100 + Math.random() * 200;
         }
     }
 
@@ -172,19 +173,7 @@ class BGScroller {
             const bandHeight = (roadTop - totalGap * 0.1 - (horizon + totalGap * 0.3)) / 3;
             const activeHorizon = horizon + totalGap * 0.3;
 
-            const isDouble = Math.random() < 0.6 && this.activeTrees.length + 1 < this.config.limits.maxTrees;
-
-            if (isDouble) {
-                const band1 = Math.floor(Math.random() * 3);
-                let band2 = Math.floor(Math.random() * 3);
-                if (band1 === band2) band2 = (band1 + 1) % 3;
-
-                this.addTree(this.canvas.width, activeHorizon, bandHeight, band1);
-                this.addTree(this.canvas.width + 30 + Math.random() * 20, activeHorizon, bandHeight, band2);
-            } else {
-                this.addTree(this.canvas.width, activeHorizon, bandHeight, Math.floor(Math.random() * 3));
-            }
-            this.nextTreeSpacing = 80 + Math.random() * 80;
+            this.addTree(this.canvas.width, activeHorizon, bandHeight, Math.floor(Math.random() * 3));
         }
     }
 
@@ -223,18 +212,15 @@ class BGScroller {
         const globalScale = this.getGlobalScale();
         const horizon = this.getHorizon();
 
-        // 畫布清除
         ctx.fillStyle = this.config.colors.sky;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // 繪製太陽
         if (this.sunImage) {
             const sunW = this.sunImage.naturalWidth * globalScale;
             const sunH = this.sunImage.naturalHeight * globalScale;
             ctx.drawImage(this.sunImage, this.canvas.width - sunW, 0, sunW, sunH);
         }
 
-        // 層次渲染
         this.layers.forEach((layer, i) => {
             const subIndex = i - 0.5;
             this.activeClouds.filter(c => c.renderIndex === subIndex).forEach(c => c.draw(ctx, globalScale));
@@ -261,9 +247,6 @@ class BGScroller {
     }
 }
 
-/**
- * 內部輔助類別
- */
 class Sprite {
     constructor(image, x = 0, y = 0, scale = 1.0) {
         this.image = image;
@@ -324,5 +307,4 @@ class MovingEntity extends Sprite {
     }
 }
 
-// 將 BGScroller 掛載到 window 供其他腳本使用
 window.BGScroller = BGScroller;

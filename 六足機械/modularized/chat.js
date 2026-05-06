@@ -1,7 +1,7 @@
 /**
  * AI Chat Logic - 🤖 小六 AI 診斷助手
- * 負責處理 UI 互動、數據轉譯、以及串接 Gemini API
  */
+import { getSimplifiedAnalytics } from './simulation.js';
 
 const ChatManager = {
     history: [],

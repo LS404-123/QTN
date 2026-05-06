@@ -57,13 +57,13 @@ const extractAllToPath2D = (htmlStr) => {
 };
 
 // 初始化所有路徑
-const legSVGPath = extractAllToPath2D(legText);
-const rodSVGPath = extractAllToPath2D(rodText);
-const gearboxSVGPath = extractAllToPath2D(gearboxText);
-const crankSVGPath = extractAllToPath2D(crankText);
-const motorSVGPath = extractAllToPath2D(motorText);
+export const legSVGPath = extractAllToPath2D(legText);
+export const rodSVGPath = extractAllToPath2D(rodText);
+export const gearboxSVGPath = extractAllToPath2D(gearboxText);
+export const crankSVGPath = extractAllToPath2D(crankText);
+export const motorSVGPath = extractAllToPath2D(motorText);
 
-// 將變數掛載到 window，供 simulation.js 等非模組化腳本存取
+// 將變數掛載到 window，供非模組化場景使用
 window.legSVGPath = legSVGPath;
 window.rodSVGPath = rodSVGPath;
 window.gearboxSVGPath = gearboxSVGPath;

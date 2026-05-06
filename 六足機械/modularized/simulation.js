@@ -1,6 +1,10 @@
 /**
  * Hexapod Simulator - Kinematics and Physics Logic
  */
+import { rodSVGPath, gearboxSVGPath, crankSVGPath, motorSVGPath } from './svgs.js';
+import { BGScroller } from './bg_scroll.js';
+
+let legSVGPath = null; // 動態更新的腳部路徑
 // --- Speed Visualization Configuration ---
 const speedVizConfig = {
     particleCount: 60,
@@ -61,7 +65,6 @@ let L_foot = 20.0 * globalScale; // 初始值調回 20.0
 let gearboxShiftX = 0;
 
 // SVG Path globals for dynamic scaling (legSVGPath is already declared in svgs.js)
-legSVGPath = null;
 let legSVG_h2y = 65; // Matches the default 45mm spacing in SVG units (20 + 45)
 
 function updateLegSVGPath() {
@@ -1376,7 +1379,7 @@ for (let i = 1; i <= 4; i++) {
 
             currentCrankHoleY = holeYs[i - 1];
             R = crankDistances[i - 1];
-            
+
             // 通知 AI 孔位變更 (R 變更)
             if (window.onSliderChanged) {
                 window.onSliderChanged('crankHole', i);
@@ -1397,10 +1400,10 @@ const MAX_ANALYTICS_WINDOW = 120; // 2 seconds at 60fps
 /**
  * 萃取適合國小生的簡化指標
  */
-function getSimplifiedAnalytics() {
+export function getSimplifiedAnalytics() {
     const recentHops = hopYHistory.slice(-MAX_ANALYTICS_WINDOW);
     const hopRange = recentHops.length > 0 ? (Math.max(...recentHops) - Math.min(...recentHops)) : 0;
-    
+
     // 使用正確的全域旗標判定
     const hasConflict = isClashing;
 
@@ -1424,7 +1427,7 @@ function getSimplifiedAnalytics() {
         physics: {
             hopRange: hasConflict ? "N/A" : hopRange.toFixed(1),
             stability: stability,
-            hasConflict: hasConflict 
+            hasConflict: hasConflict
         },
         isMoving: !hasConflict && Math.abs(simSpeed) > 0
     };

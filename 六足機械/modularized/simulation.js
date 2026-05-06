@@ -1462,5 +1462,8 @@ slidersToWatch.forEach(id => {
 // 最後啟動循環
 animate();
 
+// 將需要全域存取的函數掛載到 window
+window.getSimplifiedAnalytics = getSimplifiedAnalytics;
+
 
 

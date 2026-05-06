@@ -1,90 +1,73 @@
-// svgs.js
-// 從外部檔案動態加載 SVG 結構，並儲為 Canvas 可用的 Path2D 物件
+/**
+ * svgs.js - 🤖 機器人向量圖形加載器
+ * 使用 Vite 的 ?raw 功能，將 SVG/HTML 內容直接打包進腳本中，
+ * 避免在 Vercel 部署時出現 404 錯誤。
+ */
 
-// 宣告預設為空的 Path2D，等待 fetch 完成後會被覆蓋
-let legSVGPath = new Path2D();
-let rodSVGPath = new Path2D();
-let gearboxSVGPath = new Path2D();
-let crankSVGPath = new Path2D();
-let motorSVGPath = new Path2D();
+import legText from '../SVG/robot/腳.html?raw';
+import rodText from '../SVG/robot/直杆.html?raw';
+import gearboxText from '../SVG/robot/齒輪箱.html?raw';
+import crankText from '../SVG/robot/曲柄.html?raw';
+import motorText from '../SVG/robot/馬達.html?raw';
 
-async function loadExternalSVGs() {
-    try {
-        // 發出 HTTP 請求，取得上一層 SVG 資料夾中的原始檔案
-        const [legRes, rodRes, gearboxRes, crankRes, motorRes] = await Promise.all([
-            fetch('../SVG/robot/腳.html'),
-            fetch('../SVG/robot/直杆.html'),
-            fetch('../SVG/robot/齒輪箱.html'),
-            fetch('../SVG/robot/曲柄.html'),
-            fetch('../SVG/robot/馬達.html')
-        ]);
+/**
+ * 將 HTML/SVG 字串解析並轉換為 Canvas 可用的 Path2D 物件
+ */
+const extractAllToPath2D = (htmlStr) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlStr, "text/html");
+    let dString = "";
 
-        if (!legRes.ok || !rodRes.ok || !gearboxRes.ok || !crankRes.ok || !motorRes.ok) throw new Error(`HTTP 請求狀態異常`);
+    // 移除 defs 與 fill-only 元素
+    doc.querySelectorAll('defs').forEach(d => d.remove());
+    doc.querySelectorAll('.fill-only').forEach(f => f.remove());
 
-        const legText = await legRes.text();
-        const rodText = await rodRes.text();
-        const gearboxText = await gearboxRes.text();
-        const crankText = await crankRes.text();
-        const motorText = await motorRes.text();
+    // 提取路徑資料
+    doc.querySelectorAll('path').forEach(p => {
+        dString += p.getAttribute('d') + " ";
+    });
 
-        // 使用瀏覽器內建的 DOMParser 解析 HTML/SVG 字串以萃取所有向量形狀
-        const extractAllToPath2D = (htmlStr) => {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(htmlStr, "text/html");
-            let dString = "";
+    // 處理矩形
+    doc.querySelectorAll('rect').forEach(r => {
+        let x = parseFloat(r.getAttribute('x') || 0);
+        let y = parseFloat(r.getAttribute('y') || 0);
+        let w = parseFloat(r.getAttribute('width') || 0);
+        let h = parseFloat(r.getAttribute('height') || 0);
+        dString += `M ${x},${y} h ${w} v ${h} h ${-w} Z `;
+    });
 
-            // 移除所有在 <defs> 中的內容，避免裁切路徑等被誤認為是圖形
-            doc.querySelectorAll('defs').forEach(d => d.remove());
-            // 移除帶有 .fill-only 類別的元素，這些通常只用於預覽而不應被繪製輪廓
-            doc.querySelectorAll('.fill-only').forEach(f => f.remove());
+    // 處理線條
+    doc.querySelectorAll('line').forEach(l => {
+        let x1 = parseFloat(l.getAttribute('x1') || 0);
+        let y1 = parseFloat(l.getAttribute('y1') || 0);
+        let x2 = parseFloat(l.getAttribute('x2') || 0);
+        let y2 = parseFloat(l.getAttribute('y2') || 0);
+        dString += `M ${x1},${y1} L ${x2},${y2} `;
+    });
 
-            // 處理 <path>
-            doc.querySelectorAll('path').forEach(p => {
-                dString += p.getAttribute('d') + " ";
-            });
-            // 處理 <rect> 轉換為 SVG path
-            doc.querySelectorAll('rect').forEach(r => {
-                let x = parseFloat(r.getAttribute('x') || 0);
-                let y = parseFloat(r.getAttribute('y') || 0);
-                let w = parseFloat(r.getAttribute('width') || 0);
-                let h = parseFloat(r.getAttribute('height') || 0);
-                dString += `M ${x},${y} h ${w} v ${h} h ${-w} Z `;
-            });
-            // 處理 <line> 轉換為 SVG path (M x1,y1 L x2,y2)
-            doc.querySelectorAll('line').forEach(l => {
-                let x1 = parseFloat(l.getAttribute('x1') || 0);
-                let y1 = parseFloat(l.getAttribute('y1') || 0);
-                let x2 = parseFloat(l.getAttribute('x2') || 0);
-                let y2 = parseFloat(l.getAttribute('y2') || 0);
-                dString += `M ${x1},${y1} L ${x2},${y2} `;
-            });
-            // 處理 <circle> 轉換為 SVG path (雙圓弧)
-            doc.querySelectorAll('circle').forEach(c => {
-                let cx = parseFloat(c.getAttribute('cx') || 0);
-                let cy = parseFloat(c.getAttribute('cy') || 0);
-                let r = parseFloat(c.getAttribute('r') || 0);
-                dString += `M ${cx - r},${cy} a ${r},${r} 0 1,0 ${2 * r},0 a ${r},${r} 0 1,0 ${-2 * r},0 `;
-            });
+    // 處理圓形
+    doc.querySelectorAll('circle').forEach(c => {
+        let cx = parseFloat(c.getAttribute('cx') || 0);
+        let cy = parseFloat(c.getAttribute('cy') || 0);
+        let r = parseFloat(c.getAttribute('r') || 0);
+        dString += `M ${cx - r},${cy} a ${r},${r} 0 1,0 ${2 * r},0 a ${r},${r} 0 1,0 ${-2 * r},0 `;
+    });
 
-            return new Path2D(dString.trim());
-        };
+    return new Path2D(dString.trim());
+};
 
-        legSVGPath = extractAllToPath2D(legText);
-        rodSVGPath = extractAllToPath2D(rodText);
-        gearboxSVGPath = extractAllToPath2D(gearboxText);
-        crankSVGPath = extractAllToPath2D(crankText);
-        motorSVGPath = extractAllToPath2D(motorText);
+// 初始化所有路徑
+const legSVGPath = extractAllToPath2D(legText);
+const rodSVGPath = extractAllToPath2D(rodText);
+const gearboxSVGPath = extractAllToPath2D(gearboxText);
+const crankSVGPath = extractAllToPath2D(crankText);
+const motorSVGPath = extractAllToPath2D(motorText);
 
-        // 當非同步加載完成後，如果模擬器(simulation.js)已載入，主動觸發一次重繪來將圖形顯示在畫布上
-        if (typeof triggerUpdate === 'function') {
-            triggerUpdate();
-        }
-        console.log("外部 SVG 讀取成功！");
-    } catch (error) {
-        console.warn("無法取得外部 SVG。", error);
-        console.warn("請注意：如果您未透過本機伺服器 (如 Live Server、Python http.server) 而是直接雙擊開啟 file://，瀏覽器的 CORS 政策會阻擋外部請求！請架設 Server 或發布至 Github Pages。");
-    }
-}
+// 將變數掛載到 window，供 simulation.js 等非模組化腳本存取
+window.legSVGPath = legSVGPath;
+window.rodSVGPath = rodSVGPath;
+window.gearboxSVGPath = gearboxSVGPath;
+window.crankSVGPath = crankSVGPath;
+window.motorSVGPath = motorSVGPath;
 
-// 啟動加載程序
-loadExternalSVGs();
+console.log("[SVGs] 機器人向量圖形載入完成 (Vite Raw Mode)");

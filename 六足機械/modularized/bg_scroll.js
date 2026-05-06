@@ -1,143 +1,99 @@
 /**
- * BGScroller - 模組化無縫捲動視差背景
- * 支援 16:9 比例自動適應任何容器
+ * bg_scroll.js - 🏞️ 動態背景滾動引擎
+ * 負責處理雲朵、樹木與多層地面的滾動視覺效果。
  */
 
 class BGScroller {
-    constructor(containerId, config = {}) {
-        this.container = document.getElementById(containerId);
-        if (!this.container) {
-            console.error(`BGScroller: Container with ID "${containerId}" not found.`);
-            return;
-        }
+    constructor(canvasId, options = {}) {
+        this.canvas = document.getElementById(canvasId);
+        if (!this.canvas) return;
+        this.ctx = this.canvas.getContext('2d');
 
-        this.manualMode = config.manualMode || false;
-
-        // 支援直接傳入容器或 Canvas 本身
-        if (this.container instanceof HTMLCanvasElement) {
-            this.canvas = this.container;
-        } else {
-            this.canvas = this.container.querySelector('canvas') || document.createElement('canvas');
-            if (!this.canvas.parentElement) {
-                this.container.innerHTML = ''; // 清空預設內容
-                this.container.appendChild(this.canvas);
-            }
-        }
-        this.ctx = this.canvas.getContext('2d', { alpha: false });
-
-        // 基礎配置
         this.config = {
             speeds: {
-                hill2: 0.05,
-                hill1: 0.1,
-                ground: 0.2,
-                cloud: 0.1,
-                ...config.speeds
-            },
-            limits: {
-                maxClouds: 5,
-                maxTrees: 12,
-                ...config.limits
+                hill2: 0.2,
+                hill1: 0.5,
+                ground: 1.2,
+                cloud: 0.3,
+                ...options.speeds
             },
             colors: {
-                sky: '#C1E8F9',
-                ...config.colors
+                sky: '#e0f2fe',
+                ...options.colors
             },
-            resources: {
-                layers: [
-                    { path: '../SVG/bg/hill/hill2.svg', type: 'hill2' },
-                    { path: '../SVG/bg/hill/hill1.svg', type: 'hill1' },
-                    { path: '../SVG/bg/road/ground3.svg', type: 'ground' },
-                    { path: '../SVG/bg/road/ground2.svg', type: 'ground' },
-                    { path: '../SVG/bg/road/ground1.svg', type: 'ground' }
-                ],
-                clouds: [
-                    '../SVG/bg/cloud/cloud1.svg',
-                    '../SVG/bg/cloud/cloud2.svg',
-                    '../SVG/bg/cloud/cloud3.svg'
-                ],
-                trees: [
-                    '../SVG/bg/tree/tree1.svg',
-                    '../SVG/bg/tree/tree2.svg',
-                    '../SVG/bg/tree/tree3.svg'
-                ],
-                sun: '../SVG/bg/sun/sun.svg',
-                ...config.resources
+            limits: {
+                maxClouds: 8,
+                maxTrees: 12
             }
         };
 
+        this.manualMode = options.manualMode || false;
+        this.isInitialized = false;
         this.layers = [];
-        this.cloudImages = [];
-        this.treeImages = [];
-        this.sunImage = null;
-
         this.activeClouds = [];
         this.activeTrees = [];
-        this.nextTreeSpacing = 120;
-        this.nextCloudSpacing = 150;
-
-        this.isInitialized = false;
-        this.animationId = null;
+        this.nextCloudSpacing = 0;
+        this.nextTreeSpacing = 0;
 
         this.init();
     }
 
     async init() {
         try {
-            const [bgImgs, clImgs, trImgs, sImg] = await Promise.all([
-                Promise.all(this.config.resources.layers.map(l => this.loadImage(l.path))),
-                Promise.all(this.config.resources.clouds.map(path => this.loadImage(path))),
-                Promise.all(this.config.resources.trees.map(path => this.loadImage(path))),
-                this.loadImage(this.config.resources.sun)
+            // 定義資源路徑 (相對於 modularized 資料夾)
+            const basePath = '../SVG/background/';
+            
+            // 預載入圖片資源
+            const loadImg = (src) => new Promise((res, rej) => {
+                const img = new Image();
+                img.onload = () => res(img);
+                img.onerror = rej;
+                img.src = src;
+            });
+
+            const [hill2, hill1, ground1, ground2, sun, ...rest] = await Promise.all([
+                loadImg(basePath + 'hill2.html'),
+                loadImg(basePath + 'hill1.html'),
+                loadImg(basePath + 'ground1.html'),
+                loadImg(basePath + 'ground2.html'),
+                loadImg(basePath + 'sun.html'),
+                loadImg(basePath + 'cloud1.html'),
+                loadImg(basePath + 'cloud2.html'),
+                loadImg(basePath + 'cloud3.html'),
+                loadImg(basePath + 'tree1.html'),
+                loadImg(basePath + 'tree2.html'),
+                loadImg(basePath + 'tree3.html')
             ]);
 
-            this.layers = bgImgs.map((img, i) => new BackgroundLayer(img, this.config.resources.layers[i].type, this.config.speeds));
-            this.cloudImages = clImgs;
-            this.treeImages = trImgs;
-            this.sunImage = sImg;
+            this.sunImage = sun;
+            this.cloudImages = rest.slice(0, 3);
+            this.treeImages = rest.slice(3, 6);
 
-            if (!this.manualMode) {
-                this.resize();
-                window.addEventListener('resize', () => this.resize());
-            }
+            // 建立背景層
+            this.layers = [
+                new BackgroundLayer(hill2, 'hill2', this.config.speeds),
+                new BackgroundLayer(hill1, 'hill1', this.config.speeds),
+                new BackgroundLayer(ground1, 'ground', this.config.speeds),
+                new BackgroundLayer(ground2, 'ground', this.config.speeds)
+            ];
 
-            // 初始填充
             const horizon = this.getHorizon();
             const roadTop = this.getRoadTop();
-
             this.prePopulateClouds(horizon);
             this.prePopulateTrees(horizon, roadTop);
 
             this.isInitialized = true;
-            if (!this.manualMode) {
-                this.animate();
-            }
-        } catch (error) {
-            console.error("BGScroller Initialization failed:", error);
+            if (!this.manualMode) this.animate();
+            
+            console.log("[BGScroller] 資源載入成功");
+        } catch (err) {
+            console.error("[BGScroller] 資源載入失敗:", err);
         }
     }
 
-    loadImage(path) {
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve(img);
-            img.onerror = () => reject(`Failed to load image: ${path}`);
-            img.src = path;
-        });
-    }
-
-    resize() {
-        const rect = this.container.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-
-        // 維持 16:9 比例的 Canvas 大小
-        this.canvas.width = rect.width * dpr;
-        this.canvas.height = rect.height * dpr;
-    }
-
     getGlobalScale() {
-        const baseLayer = this.layers.find(l => l.type === 'ground');
-        return baseLayer ? this.canvas.width / baseLayer.image.naturalWidth : 1.0;
+        // 基於原始設計高度 600px 進行縮放
+        return (this.canvas.height / 600) * 1.5;
     }
 
     getHorizon() {
@@ -258,7 +214,7 @@ class BGScroller {
         const globalScale = this.getGlobalScale();
         const horizon = this.getHorizon();
 
-        // 背景清理
+        // 場景清除
         ctx.fillStyle = this.config.colors.sky;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -358,3 +314,6 @@ class MovingEntity extends Sprite {
         ctx.drawImage(this.image, this.x, y, w, h);
     }
 }
+
+// 將 BGScroller 掛載到 window 供其他腳本使用
+window.BGScroller = BGScroller;

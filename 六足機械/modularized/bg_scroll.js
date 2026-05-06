@@ -1,7 +1,19 @@
 /**
- * bg_scroll.js - 🏞️ 動態背景滾動引擎
- * 負責處理雲朵、樹木與多層地面的滾動視覺效果。
+ * bg_scroll.js - 🏞️ 動態背景滾動引擎 (Vite Raw Mode)
+ * 使用 Vite 的 ?raw 功能預載入 SVG，解決部署後的 404 問題。
  */
+
+import hill2Svg from '../SVG/bg/hill/hill2.svg?raw';
+import hill1Svg from '../SVG/bg/hill/hill1.svg?raw';
+import ground1Svg from '../SVG/bg/road/ground1.svg?raw';
+import ground2Svg from '../SVG/bg/road/ground2.svg?raw';
+import sunSvg from '../SVG/bg/sun/sun.svg?raw';
+import cloud1Svg from '../SVG/bg/cloud/cloud1.svg?raw';
+import cloud2Svg from '../SVG/bg/cloud/cloud2.svg?raw';
+import cloud3Svg from '../SVG/bg/cloud/cloud3.svg?raw';
+import tree1Svg from '../SVG/bg/tree/tree1.svg?raw';
+import tree2Svg from '../SVG/bg/tree/tree2.svg?raw';
+import tree3Svg from '../SVG/bg/tree/tree3.svg?raw';
 
 class BGScroller {
     constructor(canvasId, options = {}) {
@@ -40,34 +52,32 @@ class BGScroller {
 
     async init() {
         try {
-            // 定義資源路徑 (相對於 modularized 資料夾)
-            const basePath = '../SVG/background/';
-            
-            // 預載入圖片資源
-            const loadImg = (src) => new Promise((res, rej) => {
+            // 將 SVG 字串轉換為可直接使用的 Image 物件
+            const svgToImg = (svgText) => new Promise((res, rej) => {
                 const img = new Image();
                 img.onload = () => res(img);
                 img.onerror = rej;
-                img.src = src;
+                // 使用 Data URL 載入 SVG 內容
+                img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgText);
             });
 
-            const [hill2, hill1, ground1, ground2, sun, ...rest] = await Promise.all([
-                loadImg(basePath + 'hill2.html'),
-                loadImg(basePath + 'hill1.html'),
-                loadImg(basePath + 'ground1.html'),
-                loadImg(basePath + 'ground2.html'),
-                loadImg(basePath + 'sun.html'),
-                loadImg(basePath + 'cloud1.html'),
-                loadImg(basePath + 'cloud2.html'),
-                loadImg(basePath + 'cloud3.html'),
-                loadImg(basePath + 'tree1.html'),
-                loadImg(basePath + 'tree2.html'),
-                loadImg(basePath + 'tree3.html')
+            const [hill2, hill1, ground1, ground2, sun, c1, c2, c3, t1, t2, t3] = await Promise.all([
+                svgToImg(hill2Svg),
+                svgToImg(hill1Svg),
+                svgToImg(ground1Svg),
+                svgToImg(ground2Svg),
+                svgToImg(sunSvg),
+                svgToImg(cloud1Svg),
+                svgToImg(cloud2Svg),
+                svgToImg(cloud3Svg),
+                svgToImg(tree1Svg),
+                svgToImg(tree2Svg),
+                svgToImg(tree3Svg)
             ]);
 
             this.sunImage = sun;
-            this.cloudImages = rest.slice(0, 3);
-            this.treeImages = rest.slice(3, 6);
+            this.cloudImages = [c1, c2, c3];
+            this.treeImages = [t1, t2, t3];
 
             // 建立背景層
             this.layers = [
@@ -85,14 +95,13 @@ class BGScroller {
             this.isInitialized = true;
             if (!this.manualMode) this.animate();
             
-            console.log("[BGScroller] 資源載入成功");
+            console.log("[BGScroller] 背景資源載入成功 (Vite Raw Mode)");
         } catch (err) {
             console.error("[BGScroller] 資源載入失敗:", err);
         }
     }
 
     getGlobalScale() {
-        // 基於原始設計高度 600px 進行縮放
         return (this.canvas.height / 600) * 1.5;
     }
 
@@ -214,7 +223,7 @@ class BGScroller {
         const globalScale = this.getGlobalScale();
         const horizon = this.getHorizon();
 
-        // 場景清除
+        // 畫布清除
         ctx.fillStyle = this.config.colors.sky;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 

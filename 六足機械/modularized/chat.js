@@ -242,17 +242,15 @@ const ChatManager = {
         this.renderDebugCard();
 
 
-        if (typeof CONFIG !== 'undefined' && CONFIG.GEMINI_API_KEY && CONFIG.GEMINI_API_KEY !== "在此填入你的_API_KEY") {
-            try {
-                const response = await this.callGeminiAPI(promptBody, userText);
-                this.addMessage('ai', response);
-            } catch (error) {
-                console.error("[ChatManager] API Error:", error);
-                this.addMessage('ai', "哎呀！大腦連線失敗，我們先用預設回應喔！");
-                this.useMockResponse(analytics, isAutoTrigger);
-            }
-        } else {
-            setTimeout(() => this.useMockResponse(analytics, isAutoTrigger), 800);
+        // 嘗試呼叫 API (優先使用 Vercel Proxy)
+        try {
+            const response = await this.callGeminiAPI(promptBody, userText);
+            this.addMessage('ai', response);
+        } catch (error) {
+            console.error("[ChatManager] API Error:", error);
+            // 如果是在本地開發環境且沒有 Proxy，則使用 Mock 回應
+            this.addMessage('ai', "哎呀！大腦連線稍微卡住了，我先用預設回應喔！✨");
+            this.useMockResponse(analytics, isAutoTrigger);
         }
 
         this.isWaiting = false;
@@ -269,25 +267,27 @@ const ChatManager = {
 
 
     async callGeminiAPI(systemPrompt, userText) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.MODEL_NAME}:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
-        const body = {
-            contents: [{
-                parts: [{ text: `${systemPrompt}\n\n用戶輸入：${userText}` }]
-            }],
-            generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 150
-            }
-        };
-
+        // 改為呼叫 Vercel Serverless Function
+        const url = '/api/chat';
+        
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify({ systemPrompt, userText })
         });
 
+        if (!response.ok) {
+            throw new Error(`API returned ${response.status}`);
+        }
+
         const data = await response.json();
-        return data.candidates[0].content.parts[0].text;
+        
+        // 解析 Gemini 回傳格式 (對應 /api/chat.js 的回傳)
+        if (data.candidates && data.candidates[0].content.parts[0].text) {
+            return data.candidates[0].content.parts[0].text;
+        }
+        
+        throw new Error("Invalid API response format");
     },
 
     useMockResponse(analytics, isAutoTrigger) {

@@ -159,10 +159,12 @@ const ChatManager = {
             triggerText = `模擬速度變快了，幫我觀察一下穩定度。`;
         }
 
+        /* 移除自動觸發邏輯
         if (triggerText) {
             console.log(`[ChatManager] Auto-triggering AI for: ${id}`);
             this.getAIResponse(triggerText, true);
         }
+        */
     },
 
 

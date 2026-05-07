@@ -7,10 +7,8 @@ const ChatManager = {
     history: [],
     isWaiting: false,
     suggestionCooldown: false,
-    isFirstRequest: true, // 是否為首次請求
-    lastParams: {},      // 紀錄上次參數
-    debugHistory: [],    // 新增：儲存偵錯歷史
-    currentLogIndex: -1, // 新增：當前顯示的日誌索引
+    debugHistory: [],    // 儲存偵錯歷史
+    currentLogIndex: -1, // 當前顯示的日誌索引
 
     init() {
         console.log("[ChatManager] Initializing...");
@@ -169,7 +167,7 @@ const ChatManager = {
 
 
     /**
-     * 獲取 AI 回應 (增量更新模式)
+     * 獲取 AI 回應 (結構化推理模式)
      */
     async getAIResponse(userText, isAutoTrigger = false) {
         this.isWaiting = true;
@@ -177,90 +175,80 @@ const ChatManager = {
 
         const analytics = getSimplifiedAnalytics();
         const currentParams = analytics.params;
-        let promptBody = "";
 
-        if (this.isFirstRequest) {
-            // ... 首次請求邏輯保持不變 ...
-            promptBody = `你是一個名叫「小六」的六足機器人助手，專門指導國小學生。你正身處於一個「2D 幾何連桿模擬器」中。
+        // --- 核心機械構造規格手冊 (System Prompt) ---
+        const systemPrompt = `你是一個名叫「小六」的六足機器人助手，專門指導國小學生。你身處於一個「2D 幾何連桿模擬器」中，你對自己的身體構造與運動邏輯有著工程師等級的認知。
 
-【模擬器原理】
-1. 機構：透過曲柄 (R) 旋轉帶動藍色連桿與腿部進行橢圓形運動。
-2. 步態：機器人有「近端 (Near)」與「遠端 (Far)」兩組腿，每組三條。
-3. 物理：若零件長度不匹配，會導致「三角形幾何約束」崩潰而卡死。
+### 🔩 你的詳細機械構造規範
 
-【完整物理參數】
-- 腿長: ${currentParams.legLength}, 腳掌: ${currentParams.footLength}, 藍色連桿: ${currentParams.blueLink}, 身體寬度: ${currentParams.bodyWidth}, 曲柄(R): ${currentParams.crankRadius}, 相位差: ${currentParams.phaseDiff}°
+#### 1. 空間座標與佈局
+- **基礎平面**：這是一個 2D 側視平面。所有運動都在水平位移與垂直高度軸上發生。
+- **身體基準線**：你的身體是一個水平的參考框架。在這條線上，左右對稱地分佈著三個關鍵的旋轉掛載點。
+- **三軸支點**：分為前軸、中軸與後軸。它們是固定的支撐點，所有的腿部擺動都以此為圓心。
+
+#### 2. 同側三腿包裝：相位連動組
+- **前腿與後腿組**：這兩條腿在機械步態上是同步的。它們共享相同的曲柄旋轉角度。
+- **中腿組**：它與前腿、後腿組呈 180 度反向相位。
+- **連動效果**：在同一側的運動包裝中，前腿、後腿組與中腿組形成交替支撐關係。當前腿與後腿抬起向前跨越空中的瞬間，中腿必然正用力踩在地上向後推動。這種節奏確保了行進的連續性。
+
+#### 3. 單一腿部單元的精密解構
+- **曲柄**：一個由馬達帶動的旋轉圓盤，在固定的軸心上做連續的 360 度圓周運動。
+- **藍色連桿**：一個剛性連接件，負責將曲柄的動力轉化為腿部的運動。
+- **連接方式**：一端扣在曲柄的邊緣動點，另一端連接在「前腿」與「後腿」的上方孔位。
+- **腿部**：一根垂直長桿，透過其「中點」安裝在身體的固定支點上。
+- **動力受力點**：
+    - **前腿與後腿**：藍色連桿連接在腿部的上方孔位，透過拉動上端來產生槓桿擺動。
+    - **中腿**：藍色連桿的推拉直接產生垂直的往復支撐動作。
+- **腳掌**：位於腿部底部的水平結構。
+
+#### 4. 運動路徑與軌跡生成
+- **擺動路徑**：前腿與後腿繞著中點支點做鐘擺式的前後往復擺動。
+- **中腿的特殊動作**：由於藍色連桿的推動，當曲柄旋轉到上半圓時，中腿會產生向上拉起的動作；旋轉到下半圓時，中腿則產生向下壓實的動作。
+- **合成軌跡**：腳尖在空中畫出的是一個非對稱的橢圓軌跡。橢圓寬度由曲柄半徑決定，高度則受藍色連桿連接位置與曲柄直徑共同影響。
+
+#### 5. 幾何約束與失效判讀
+- **三角形約束**：曲柄中心、曲柄邊緣動點、與前腿或後腿的連接點在空間中形成一個動態三角形。
+- **幾何卡死**：如果組件長度比例失調（例如：曲柄半徑過大，導致藍色連桿即便伸到最長也無法連接到腿部孔位），則三角形無法閉合，馬達扭矩無法輸出，動作會瞬間凝固。
+
+### 💡 對話規則 (教學風格)
+1. **身分與語言**：你是親切的導師小六，請務必使用 **繁體中文** 回覆。
+2. **核心模式 (A+B)**：
+   - **(A) 原理詳解**：結合上述機械結構，用小學常識（重心、摩擦力、力臂、平衡）解釋目前機器人的運動現象。
+   - **(B) 靈感追問**：解釋完後，提出一個簡單的「實驗建議」引發學生進一步測試。
+3. **視覺語義**：提及組件顏色或位置來引導觀察。
+4. **限制**：語氣活潑、愛用 Emoji。每則回覆在 80 字內。✨`;
+
+        // --- 當前背景數據 (User Context) ---
+        const contextBody = `【目前機器人參數】
+- 腿長: ${currentParams.legLength}, 腳掌: ${currentParams.footLength}, 藍色連桿: ${currentParams.blueLink}
+- 身體寬度: ${currentParams.bodyWidth}, 曲柄半徑(R): ${currentParams.crankRadius}, 相位差: ${currentParams.phaseDiff}°
 
 【目前的動態狀態】
 - 結構衝突: ${analytics.physics.hasConflict ? "⚠️ 是 (卡死)" : "✅ 否"}
 - 身體跳動幅度: ${analytics.physics.hopRange}
 - 穩定度評價: ${analytics.physics.stability}
 
-【對話規則】
-1. 專注本職：只回答與此「2D 幾何連桿模擬器」及「機器人運動科學」相關的問題。
-2. 委婉拒絕：若使用者詢問無關話題（如數學、天氣等），請用活潑語氣拒絕並導回機器人科學。
-3. 幽默、愛用比喻。每次只聚焦一個重點。
-4. 優先級：幾何衝突 > 跳動過大 > 其他分析。
-5. 語氣簡單，回覆在 80 字內。必須包含一個 Emoji。✨`;
+【使用者輸入/觸發事件】
+${userText}`;
 
-            this.isFirstRequest = false;
-        } else {
-            // --- 後續請求：精確對比變動 ---
-            const paramNames = {
-                legLength: "腿長",
-                footLength: "腳掌長",
-                blueLink: "藍色連桿",
-                bodyWidth: "身體寬度",
-                crankRadius: "曲柄半徑(R)",
-                phaseDiff: "相位差"
-            };
-
-            let changedDesc = "";
-            for (let key in paramNames) {
-                const oldVal = this.lastParams[key];
-                const newVal = currentParams[key];
-
-                // 使用門檻值判斷，避免 20.000000001 !== 20 的問題
-                if (oldVal !== undefined && Math.abs(oldVal - newVal) > 0.1) {
-                    changedDesc += `${paramNames[key]}變為 ${newVal}, `;
-                }
-            }
-
-            promptBody = `【參數變動】${changedDesc || "微調參數"}
-【狀態】衝突: ${analytics.physics.hasConflict ? "⚠️是" : "✅否"}, 穩定: ${analytics.physics.stability}
-【任務】分析上述變化。保持小六人格，80 字內。✨`;
-        }
-
-        this.lastParams = { ...currentParams };
-
-        // 紀錄本次通訊到歷史卡片
+        // 紀錄本次通訊到歷史卡片 (偵錯用)
         this.debugHistory.push({
             timestamp: Date.now(),
-            content: `[PROMPT SENT]\n${promptBody.trim()}\n\n[USER INPUT]\n${userText}`
+            content: `[SYSTEM PROMPT]\n${systemPrompt}\n\n[CONTEXT]\n${contextBody}`
         });
         this.currentLogIndex = this.debugHistory.length - 1;
         this.renderDebugCard();
 
-
-        // 嘗試呼叫 API (優先使用 Vercel Proxy)
         try {
-            const response = await this.callGeminiAPI(promptBody, userText);
+            const response = await this.callGeminiAPI(systemPrompt, contextBody);
             this.addMessage('ai', response);
         } catch (error) {
             console.error("[ChatManager] API Error:", error);
-            // 如果是在本地開發環境且沒有 Proxy，則使用 Mock 回應
-            this.addMessage('ai', "哎呀！大腦連線稍微卡住了，我先用預設回應喔！✨");
-            this.useMockResponse(analytics, isAutoTrigger);
+            this.addMessage('ai', "哎呀！我的大腦齒輪卡住了，請再試一次！✨");
         }
 
         this.isWaiting = false;
-
-        // 關鍵修正：回應結束後，根據冷卻狀態切換燈號
-        if (this.suggestionCooldown) {
-            this.updateStatus("休息中...");
-        } else {
-            this.updateStatus("觀察中...");
-        }
+        this.updateStatus(this.suggestionCooldown ? "休息中..." : "觀察中...");
     },
 
 

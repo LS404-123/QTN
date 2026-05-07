@@ -23,7 +23,8 @@ body {
 
 .app-container {
     width: 100%;
-    max-width: 1250px;
+    max-width: 1800px; /* Use more of the screen */
+    margin: 0 auto;
     padding: 20px;
     box-sizing: border-box;
 }
@@ -51,8 +52,10 @@ header h2 {
 /* Bento Grid */
 .bento-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
+    /* 2 columns: Left(1.5fr) | Right(1fr) */
+    grid-template-columns: 1.5fr 1fr;
+    gap: 12px; /* Reduced gap */
+    align-items: stretch;
 }
 
 
@@ -62,13 +65,14 @@ header h2 {
     -webkit-backdrop-filter: saturate(180%) blur(20px);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 20px;
+    padding: 16px; /* Reduced padding */
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+    box-sizing: border-box; /* Prevent padding from causing overflow */
 }
 
 /* Hero Canvas Section */
 .hero-canvas {
-    grid-column: 1 / -1;
+    grid-column: 1;
     padding: 0;
     overflow: hidden;
     display: flex;
@@ -76,7 +80,16 @@ header h2 {
     align-items: center;
     background: transparent;
     position: relative;
+}
+
+#simCanvas {
+    width: 100%;
+    height: auto;
     aspect-ratio: 16 / 9;
+    object-fit: contain;
+    display: block;
+    background: #e1e1e1;
+    border-radius: var(--radius-lg);
 }
 
 
@@ -97,7 +110,7 @@ header h2 {
 
 .admin-mode #adminSection {
     display: block;
-    grid-column: 1 / -1;
+    grid-column: 1 / span 2;
     animation: slideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -120,7 +133,7 @@ header h2 {
 
 /* Typography & Headers */
 .section-header {
-    margin-bottom: 16px;
+    margin-bottom: 12px; /* Reduced margin */
 }
 
 .section-title {
@@ -136,7 +149,14 @@ header h2 {
 .slider-stack {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px; /* Reduced gap */
+}
+
+.controls-env .slider-stack {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 16px;
+    align-content: start;
 }
 
 .grid-sliders {
@@ -199,7 +219,7 @@ button:active {
 .apple-slider {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px; /* Even tighter gap */
 }
 
 .slider-info {
@@ -270,6 +290,16 @@ input[type="range"] {
     padding: 15px;
     overflow-y: auto;
     position: relative;
+    min-height: 0;
+}
+
+/* Custom scrollbar for dark debug console */
+.debug-card-container::-webkit-scrollbar {
+    width: 4px;
+}
+.debug-card-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
 }
 
 .debug-card {
@@ -408,14 +438,55 @@ input:checked+.slider-check:before {
     pointer-events: none;
 }
 
-/* AI Chatbox Wide */
-.ai-chat-wide {
-    grid-column: 1 / -1;
+/* Side Panel System */
+.side-panel-group {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 0; /* Ignore intrinsic height for grid row calculation */
+    min-height: 100%; /* Stretch to match the row height dictated by hero-canvas */
+}
+
+.panel-header-toggle {
+    background: var(--card-bg);
+    padding: 8px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(20px);
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 8px;
+    font-size: 13px;
+    background: transparent;
+    color: var(--text-muted);
+    border-radius: 7px;
+    transition: all 0.2s;
+}
+
+.tab-btn.active {
+    background: white;
+    color: var(--primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.ai-chat-panel, .debug-console-panel {
+    display: none !important;
+}
+
+.ai-chat-panel.active-panel, .debug-console-panel.active-panel {
+    display: flex !important;
+}
+
+/* AI Chatbox Panel */
+.ai-chat-panel {
+    flex: 1; /* Fill available height */
     display: flex;
     flex-direction: column;
     gap: 16px;
-    height: 350px;
-    max-height: 400px;
+    min-height: 0; /* Allow shrinking */
 }
 
 .ai-status {
@@ -574,17 +645,36 @@ input:checked+.slider-check:before {
 
 .chat-input-area button {
     width: auto;
-    padding: 0 20px;
+    padding: 0 24px;
+    white-space: nowrap;
 }
 
-/* Debug Console Styles - Updated for separate Bento box */
-.debug-console-full {
-    grid-column: span 2;
-    background: rgba(15, 23, 42, 0.8) !important;
+/* Debug Console Styles - Tabbed version */
+.debug-console-panel {
+    flex: 1; /* Fill available height */
+    background: rgba(15, 23, 42, 0.9) !important;
     backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     padding: 15px;
     font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    min-height: 0; /* Allow shrinking */
+}
+
+.controls-basic {
+    grid-column: 1;
+}
+
+.controls-env {
+    grid-column: 2;
+}
+
+.controls-basic, .controls-env {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .debug-header {
@@ -608,12 +698,13 @@ input:checked+.slider-check:before {
 }
 
 /* Responsive */
-@media (max-width: 850px) {
+@media (max-width: 1200px) {
     .bento-grid {
         grid-template-columns: 1fr;
     }
 
-    .debug-console-full {
-        grid-column: span 1;
+    .side-panel-group {
+        grid-column: 1;
+        grid-row: auto;
     }
 }

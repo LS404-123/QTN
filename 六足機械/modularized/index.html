@@ -28,6 +28,52 @@
                 <canvas id="simCanvas" width="1120" height="630"></canvas>
             </section>
 
+            <!-- Side Panel Container (Chat + Log Toggle) -->
+            <div class="side-panel-group">
+                <div class="panel-header-toggle">
+                    <div class="segmented-control">
+                        <button id="showChatBtn" class="tab-btn active">🤖 小六 AI</button>
+                        <button id="showLogBtn" class="tab-btn">🕵️ 診斷日誌</button>
+                    </div>
+                </div>
+
+                <!-- AI Diagnostic Center -->
+                <section class="bento-item ai-chat-panel active-panel" id="chatPanel">
+                    <div class="section-header">
+                        <span class="section-title">🤖 小六 AI 診斷助手</span>
+                        <div class="ai-status">
+                            <span class="status-dot"></span>
+                            <span class="status-text">觀察中...</span>
+                        </div>
+                    </div>
+                    <div id="chatHistory" class="chat-history">
+                        <div class="message ai-msg">
+                            <div class="msg-avatar">🤖</div>
+                            <div class="msg-content">嘿！我是小六，我會在這裡幫你觀察機器人的走路狀況喔！試著調整看看滑桿吧！✨</div>
+                        </div>
+                    </div>
+                    <div class="chat-input-area">
+                        <input type="text" id="userInput" placeholder="問問小六關於機器人的事..." autocomplete="off">
+                        <button id="sendBtn" class="btn-primary">送出</button>
+                    </div>
+                </section>
+
+                <!-- Debug Console -->
+                <section class="bento-item debug-console-panel" id="logPanel">
+                    <div class="debug-header">
+                        <span>🕵️ 診斷傳輸日誌</span>
+                        <div class="debug-nav">
+                            <button id="prevLog" class="btn-mini">◀</button>
+                            <span id="logCounter">0 / 0</span>
+                            <button id="nextLog" class="btn-mini">▶</button>
+                        </div>
+                    </div>
+                    <div id="debugCardContainer" class="debug-card-container">
+                        <div class="debug-card empty">目前尚無通訊紀錄</div>
+                    </div>
+                </section>
+            </div>
+
             <!-- Playback Controls -->
             <section class="bento-item controls-basic">
                 <div class="section-header">
@@ -118,44 +164,6 @@
                     </div>
                 </div>
             </section>
-            <!-- AI Diagnostic Center (Wide Bento Item) -->
-            <section class="bento-item ai-chat-wide">
-                <div class="section-header">
-                    <span class="section-title">🤖 小六 AI 診斷助手</span>
-                    <div class="ai-status">
-                        <span class="status-dot"></span>
-                        <span class="status-text">觀察中...</span>
-                    </div>
-
-
-
-                </div>
-                <div id="chatHistory" class="chat-history">
-                    <div class="message ai-msg">
-                        <div class="msg-avatar">🤖</div>
-                        <div class="msg-content">嘿！我是小六，我會在這裡幫你觀察機器人的走路狀況喔！試著調整看看滑桿吧！✨</div>
-                    </div>
-                </div>
-                <div class="chat-input-area">
-                    <input type="text" id="userInput" placeholder="問問小六關於機器人的事..." autocomplete="off">
-                    <button id="sendBtn" class="btn-primary">送出</button>
-                </div>
-            </section>
-
-            <!-- Debug Console - Moved to bottom to avoid squeezing chat -->
-            <section class="bento-item debug-console-full">
-                <div class="debug-header">
-                    <span>🕵️ 診斷傳輸日誌</span>
-                    <div class="debug-nav">
-                        <button id="prevLog" class="btn-mini">◀</button>
-                        <span id="logCounter">0 / 0</span>
-                        <button id="nextLog" class="btn-mini">▶</button>
-                    </div>
-                </div>
-                <div id="debugCardContainer" class="debug-card-container">
-                    <div class="debug-card empty">目前尚無通訊紀錄</div>
-                </div>
-            </section>
 
         </main>
     </div>
@@ -167,6 +175,30 @@
     <script type="module" src="bg_scroll.js"></script>
     <script type="module" src="simulation.js"></script>
     <script type="module" src="chat.js"></script>
+
+    <!-- UI Tab Switch Logic -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const showChatBtn = document.getElementById('showChatBtn');
+            const showLogBtn = document.getElementById('showLogBtn');
+            const chatPanel = document.getElementById('chatPanel');
+            const logPanel = document.getElementById('logPanel');
+
+            showChatBtn.addEventListener('click', () => {
+                showChatBtn.classList.add('active');
+                showLogBtn.classList.remove('active');
+                chatPanel.classList.add('active-panel');
+                logPanel.classList.remove('active-panel');
+            });
+
+            showLogBtn.addEventListener('click', () => {
+                showLogBtn.classList.add('active');
+                showChatBtn.classList.remove('active');
+                logPanel.classList.add('active-panel');
+                chatPanel.classList.remove('active-panel');
+            });
+        });
+    </script>
 </body>
 
 

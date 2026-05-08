@@ -37,20 +37,19 @@
                     </div>
                 </div>
 
-                <!-- AI Diagnostic Center -->
                 <section class="bento-item ai-chat-panel active-panel" id="chatPanel">
                     <div class="section-header">
                         <span class="section-title">🤖 小六 AI 診斷助手</span>
-                        <div class="ai-status">
-                            <span class="status-dot"></span>
-                            <span class="status-text">觀察中...</span>
-                        </div>
                     </div>
                     <div id="chatHistory" class="chat-history">
                         <div class="message ai-msg">
                             <div class="msg-avatar">🤖</div>
                             <div class="msg-content">嘿！我是小六，我會在這裡幫你觀察機器人的走路狀況喔！試著調整看看滑桿吧！✨</div>
                         </div>
+                    </div>
+                    <div class="ai-status">
+                        <span class="status-dot"></span>
+                        <span class="status-text">觀察中...</span>
                     </div>
                     <div class="chat-input-area">
                         <input type="text" id="userInput" placeholder="問問小六關於機器人的事..." autocomplete="off">
@@ -133,19 +132,19 @@
                 </div>
                 <div class="grid-sliders">
                     <div class="apple-slider">
-                        <div class="slider-info"><label>腿長 L<sub>leg</sub></label><span id="lLegVal">25</span></div>
+                        <div class="slider-info"><label>腳長 L<sub>leg</sub></label><span id="lLegVal">25</span></div>
                         <input type="range" id="lLegSlider" min="10" max="60" step="1" value="25">
                     </div>
                     <div class="apple-slider">
-                        <div class="slider-info"><label>支架 S</label><span id="sVal">48</span></div><input type="range"
+                        <div class="slider-info"><label>機械人長度 S</label><span id="sVal">48</span></div><input type="range"
                             id="sSlider" min="20" max="80" step="1" value="48">
                     </div>
                     <div class="apple-slider">
-                        <div class="slider-info"><label>臂長 L<sub>blue</sub></label><span id="lBlueVal">55</span></div>
+                        <div class="slider-info"><label>(藍色)直桿 L<sub>blue</sub></label><span id="lBlueVal">55</span></div>
                         <input type="range" id="lBlueSlider" min="40" max="100" step="1" value="55">
                     </div>
                     <div class="apple-slider">
-                        <div class="slider-info"><label>腳長 L<sub>foot</sub></label><span id="lFootVal">20.0</span></div>
+                        <div class="slider-info"><label>機械人高度 L<sub>foot</sub></label><span id="lFootVal">20.0</span></div>
                         <input type="range" id="lFootSlider" min="19" max="100" step="1" value="20.0">
                     </div>
                     <div class="apple-slider">

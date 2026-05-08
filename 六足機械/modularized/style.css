@@ -485,7 +485,7 @@ input:checked+.slider-check:before {
     flex: 1; /* Fill available height */
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 8px; /* Reduced gap */
     min-height: 0; /* Allow shrinking */
 }
 
@@ -493,7 +493,7 @@ input:checked+.slider-check:before {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-left: auto;
+    padding: 0 4px;
 }
 
 .status-dot {

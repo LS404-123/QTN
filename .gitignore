@@ -38,3 +38,9 @@ yarn-error.log*
 
 # Logs
 *.log
+
+# Documentation & Tests
+AGENT_GUIDE.md
+AI_Framework.md
+reply.md
+test.md

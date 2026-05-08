@@ -9,6 +9,7 @@ const ChatManager = {
     suggestionCooldown: false,
     debugHistory: [],    // 儲存偵錯歷史
     currentLogIndex: -1, // 當前顯示的日誌索引
+    lastSentParamsJson: null, // 紀錄上次發送給 AI 的參數狀態
 
     init() {
         console.log("[ChatManager] Initializing...");
@@ -33,11 +34,6 @@ const ChatManager = {
         // 導航按鈕
         this.prevLogBtn?.addEventListener('click', () => this.showLog(this.currentLogIndex - 1));
         this.nextLogBtn?.addEventListener('click', () => this.showLog(this.currentLogIndex + 1));
-
-        // 監聽滑桿變動 (由 simulation.js 觸發)
-        window.onSliderChanged = (id, value) => {
-            this.handleSliderChange(id, value);
-        };
 
         console.log("[ChatManager] Ready!");
     },
@@ -87,8 +83,10 @@ const ChatManager = {
         this.chatHistory.appendChild(msgDiv);
         this.chatHistory.scrollTop = this.chatHistory.scrollHeight;
 
-        this.history.push({ role, text });
-        if (this.history.length > 10) this.history.shift();
+        // 儲存至歷史紀錄 (格式化為 Gemini 格式)
+        const geminiRole = role === 'ai' ? 'model' : 'user';
+        this.history.push({ role: geminiRole, parts: [{ text }] });
+        if (this.history.length > 20) this.history.shift(); // 增加歷史容量到 20 條
     },
 
     /**
@@ -100,8 +98,7 @@ const ChatManager = {
         if (statusEl) statusEl.innerText = text;
 
         if (dotEl) {
-            dotEl.classList.remove('resting', 'thinking');
-            if (text.includes("休息中")) dotEl.classList.add('resting');
+            dotEl.classList.remove('thinking');
             if (text.includes("思考中")) dotEl.classList.add('thinking');
         }
     },
@@ -119,61 +116,36 @@ const ChatManager = {
         await this.getAIResponse(text);
     },
 
+
+
+
     /**
-     * 處理滑桿變動 (半主動模式)
+     * 捕捉當前模擬器畫面 (WebP 格式)
      */
-    handleSliderChange(id, value) {
-        if (this.suggestionCooldown) return;
-
-        this.suggestionCooldown = true;
-
-        // 啟動冷卻計時 (UI 顯示休息中)
-        this.updateStatus("休息中...");
-        setTimeout(() => {
-            this.suggestionCooldown = false;
-            if (!this.isWaiting) this.updateStatus("觀察中...");
-        }, 5000);
-
-
-
-        let triggerText = "";
-        const val = Math.round(value);
-
-
-        if (id === 'lLegSlider') {
-            triggerText = `我發現你把「腿長」調到了 ${val}！這樣走路會有什麼變化呢？`;
-        } else if (id === 'lFootSlider') {
-            triggerText = `「腳掌長度」變成了 ${val}，這會讓它站得更穩嗎？`;
-        } else if (id === 'lBlueSlider') {
-            triggerText = `你調整了「藍色連桿」長度為 ${val}，這會改變腳抬起的高度喔！`;
-        } else if (id === 'sSlider') {
-            triggerText = `「支架寬度 S」現在是 ${val}，這對重心有什麼影響呢？`;
-        } else if (id === 'gearboxShiftSlider') {
-            triggerText = `你移動了「齒輪箱位置」，這會改變曲柄半徑 R 喔！幫我看看有沒有卡住。`;
-        } else if (id === 'crankHole') {
-            triggerText = `你把曲柄孔位換到了第 ${val} 孔，這會大幅改變步伐的大小喔！`;
-        } else if (id === 'phaseSlider') {
-
-            triggerText = `相位差調成 ${val} 度了！機器人走路的姿勢好像變了耶。`;
-        } else if (id === 'simSpeedSlider' || id === 'speedSlider') {
-            triggerText = `模擬速度變快了，幫我觀察一下穩定度。`;
-        }
-
-        /* 移除自動觸發邏輯
-        if (triggerText) {
-            console.log(`[ChatManager] Auto-triggering AI for: ${id}`);
-            this.getAIResponse(triggerText, true);
-        }
-        */
+    captureCanvas() {
+        const canvas = document.getElementById('simCanvas');
+        if (!canvas) return null;
+        // 使用 0.6 質量壓縮以節省 Token 與傳輸時間
+        return canvas.toDataURL('image/webp', 0.6);
     },
-
 
     /**
      * 獲取 AI 回應 (結構化推理模式)
      */
-    async getAIResponse(userText, isAutoTrigger = false) {
+    async getAIResponse(userText) {
         this.isWaiting = true;
-        this.updateStatus("思考中...");
+        
+        // 判斷是否需要截圖 (智慧觸發)
+        const needsVision = /看|這|姿態|怎麼了|為什麼|掛了|卡住/.test(userText) || 
+                           getSimplifiedAnalytics().physics.hasConflict;
+        
+        let imageData = null;
+        if (needsVision) {
+            this.updateStatus("觀察畫面中...");
+            imageData = this.captureCanvas();
+        } else {
+            this.updateStatus("思考中...");
+        }
 
         const analytics = getSimplifiedAnalytics();
         const currentParams = analytics.params;
@@ -195,43 +167,50 @@ const ChatManager = {
 
 #### 3. 單一腿部單元的精密解構
 - **曲柄**：一個由馬達帶動的旋轉圓盤，在固定的軸心上做連續的 360 度圓周運動。
-- **藍色連桿**：一個剛性連接件，負責將曲柄的動力轉化為腿部的運動。
-- **連接方式**：一端扣在曲柄的邊緣動點，另一端連接在「前腿」與「後腿」的上方孔位。
+- **(藍色)直桿**：一個剛性連接件，負責將曲柄的動力轉化為腿部的運動。
+- **連接方式**：一端扣在曲柄的「曲柄孔位」，另一端連接在「前腿」與「後腿」的上方孔位。
 - **腿部**：一根垂直長桿，透過其「中點」安裝在身體的固定支點上。
 - **動力受力點**：
-    - **前腿與後腿**：藍色連桿連接在腿部的上方孔位，透過拉動上端來產生槓桿擺動。
-    - **中腿**：藍色連桿的推拉直接產生垂直的往復支撐動作。
-- **腳掌**：位於腿部底部的水平結構。
+    - **前腿與後腿**：(藍色)直桿連接在腿部的上方孔位，透過拉動上端來產生槓桿擺動。
+    - **中腿**：(藍色)直桿的推拉直接產生垂直的往復支撐動作。
+- **機械人高度**：位於腿部底部的水平結構。
 
 #### 4. 運動路徑與軌跡生成
 - **擺動路徑**：前腿與後腿繞著中點支點做鐘擺式的前後往復擺動。
-- **中腿的特殊動作**：由於藍色連桿的推動，當曲柄旋轉到上半圓時，中腿會產生向上拉起的動作；旋轉到下半圓時，中腿則產生向下壓實的動作。
-- **合成軌跡**：腳尖在空中畫出的是一個非對稱的橢圓軌跡。橢圓寬度由曲柄半徑決定，高度則受藍色連桿連接位置與曲柄直徑共同影響。
+- **中腿的特殊動作**：由於(藍色)直桿的推動，當曲柄旋轉到上半圓時，中腿會產生向上拉起的動作；旋轉到下半圓時，中腿則產生向下壓實的動作。
+- **合成軌跡**：腳尖在空中畫出的是一個非對稱的橢圓軌跡。橢圓寬度由曲柄孔位決定，高度則受(藍色)直桿連接位置與曲柄直徑共同影響。
 
 #### 5. 幾何約束與失效判讀
-- **三角形約束**：曲柄中心、曲柄邊緣動點、與前腿或後腿的連接點在空間中形成一個動態三角形。
-- **幾何卡死**：如果組件長度比例失調（例如：曲柄半徑過大，導致藍色連桿即便伸到最長也無法連接到腿部孔位），則三角形無法閉合，馬達扭矩無法輸出，動作會瞬間凝固。
+- **三角形約束**：曲柄中心、曲柄孔位、與前腿或後腿的連接點在空間中形成一個動態三角形。
+- **幾何卡死**：如果組件長度比例失調（例如：曲柄孔位過大，導致(藍色)直桿即便伸到最長也無法連接到腿部孔位），則三角形無法閉合，馬達扭矩無法輸出，動作會瞬間凝固。
 
 ### 💡 對話規則 (教學風格)
-1. **身分與語言**：你是親切的導師小六，請務必使用 **繁體中文** 回覆。
-2. **核心模式 (A+B)**：
+1. **身分與語言**：你是親切的香港小學常識科老師小六，請務必使用 **繁體中文** 回覆。
+2. *專業用語**：用小學生聽得懂的語言解釋機械人的構造與運動原理，避免使用過於專業的物理和工程術語。
+3. **核心模式 (A+B)**：
    - **(A) 原理詳解**：結合上述機械結構，用小學常識（重心、摩擦力、力臂、平衡）解釋目前機器人的運動現象。
-   - **(B) 靈感追問**：解釋完後，提出一個簡單的「實驗建議」引發學生進一步測試。
-3. **視覺語義**：提及組件顏色或位置來引導觀察。
-4. **限制**：語氣活潑、愛用 Emoji。每則回覆在 80 字內。✨`;
+   - **(B) 靈感追問**：解釋完後，提出一個簡單的「實驗建議」引導學生進一步測試。
+4. **視覺語義**：提及組件顏色或位置來引導觀察。
+5. **限制**：語氣活潑、愛用 Emoji。每則回覆在 80 字內。✨`;
 
-        // --- 當前背景數據 (User Context) ---
-        const contextBody = `【目前機器人參數】
-- 腿長: ${currentParams.legLength}, 腳掌: ${currentParams.footLength}, 藍色連桿: ${currentParams.blueLink}
-- 身體寬度: ${currentParams.bodyWidth}, 曲柄半徑(R): ${currentParams.crankRadius}, 相位差: ${currentParams.phaseDiff}°
+        // --- 當前背景數據 (Smart Context) ---
+        const currentParamsJson = JSON.stringify(currentParams);
+        let contextBody = "";
 
-【目前的動態狀態】
+        // 只有在參數變動、有結構衝突、或是歷史紀錄很短時，才發送完整物理數據
+        if (currentParamsJson !== this.lastSentParamsJson || analytics.physics.hasConflict || this.history.length < 3) {
+            contextBody = `【機器人機械參數 (有變動)】
+- 腳長: ${currentParams.legLength}, 機械人高度: ${currentParams.footLength}, (藍色)直桿: ${currentParams.blueLink}
+- 機械人長度: ${currentParams.bodyWidth}, 曲柄孔位(R): ${currentParams.crankRadius}, 相位差: ${currentParams.phaseDiff}°
 - 結構衝突: ${analytics.physics.hasConflict ? "⚠️ 是 (卡死)" : "✅ 否"}
-- 身體跳動幅度: ${analytics.physics.hopRange}
 - 穩定度評價: ${analytics.physics.stability}
 
-【使用者輸入/觸發事件】
+【使用者輸入】
 ${userText}`;
+            this.lastSentParamsJson = currentParamsJson;
+        } else {
+            contextBody = `【機械參數維持不變】\n${userText}`;
+        }
 
         // 紀錄本次通訊到歷史卡片 (偵錯用)
         this.debugHistory.push({
@@ -242,7 +221,8 @@ ${userText}`;
         this.renderDebugCard();
 
         try {
-            const response = await this.callGeminiAPI(systemPrompt, contextBody);
+            const historyToSend = this.history.slice(0, -1);
+            const response = await this.callGeminiAPI(systemPrompt, contextBody, historyToSend, imageData);
             this.addMessage('ai', response);
         } catch (error) {
             console.error("[ChatManager] API Error:", error);
@@ -250,20 +230,20 @@ ${userText}`;
         }
 
         this.isWaiting = false;
-        this.updateStatus(this.suggestionCooldown ? "休息中..." : "觀察中...");
+        this.updateStatus("觀察中...");
     },
 
 
 
 
-    async callGeminiAPI(systemPrompt, userText) {
+    async callGeminiAPI(systemPrompt, userText, history = [], imageData = null) {
         // 改為呼叫 Vercel Serverless Function
         const url = '/api/chat';
 
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ systemPrompt, userText })
+            body: JSON.stringify({ systemPrompt, userText, history, imageData })
         });
 
         if (!response.ok) {

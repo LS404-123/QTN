@@ -9,14 +9,37 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { systemPrompt, userText } = req.body;
+  const { systemPrompt, userText, history, imageData } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${apiKey}`;
+  // 使用系統指令與內容歷史
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
+
+  const contents = history ? [...history] : [];
+  
+  // 構建當前訊息的 parts
+  const currentParts = [{ text: userText }];
+  
+  // 如果有圖片，加入 inline_data
+  if (imageData) {
+    // 移除 Base64 前綴 (如果有的話)
+    const base64Data = imageData.includes('base64,') 
+      ? imageData.split('base64,')[1] 
+      : imageData;
+      
+    currentParts.push({
+      inline_data: {
+        mime_type: "image/webp",
+        data: base64Data
+      }
+    });
+  }
+
+  contents.push({ role: 'user', parts: currentParts });
 
   try {
     const response = await fetch(url, {
@@ -25,14 +48,13 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: `${systemPrompt}\n\n用戶輸入：${userText}` }],
-          },
-        ],
+        system_instruction: {
+          parts: [{ text: systemPrompt }]
+        },
+        contents: contents,
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 150,
+          maxOutputTokens: 200,
         },
       }),
     });

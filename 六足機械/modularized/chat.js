@@ -134,11 +134,11 @@ const ChatManager = {
      */
     async getAIResponse(userText) {
         this.isWaiting = true;
-        
+
         // 判斷是否需要截圖 (智慧觸發)
-        const needsVision = /看|這|姿態|怎麼了|為什麼|掛了|卡住/.test(userText) || 
-                           getSimplifiedAnalytics().physics.hasConflict;
-        
+        const needsVision = /看|這|姿態|怎麼了|為什麼|掛了|卡住/.test(userText) ||
+            getSimplifiedAnalytics().physics.hasConflict;
+
         let imageData = null;
         if (needsVision) {
             this.updateStatus("觀察畫面中...");
@@ -213,15 +213,17 @@ ${userText}`;
         }
 
         // 紀錄本次通訊到歷史卡片 (偵錯用)
+        const historyToSend = this.history.slice(0, -1);
+        const historyText = historyToSend.map(h => `[${h.role.toUpperCase()}]: ${h.parts[0].text.substring(0, 50)}...`).join('\n');
+
         this.debugHistory.push({
             timestamp: Date.now(),
-            content: `[SYSTEM PROMPT]\n${systemPrompt}\n\n[CONTEXT]\n${contextBody}`
+            content: `[SYSTEM PROMPT]\n${systemPrompt}\n\n[HISTORY]\n${historyText || '(無歷史紀錄)'}\n\n[CURRENT CONTEXT]\n${contextBody}${imageData ? `\n\n[IMAGE SENT]\n<img src="${imageData}" style="width:100%; border-radius:8px; margin-top:10px; border:1px solid #444;">` : ''}`
         });
         this.currentLogIndex = this.debugHistory.length - 1;
         this.renderDebugCard();
 
         try {
-            const historyToSend = this.history.slice(0, -1);
             const response = await this.callGeminiAPI(systemPrompt, contextBody, historyToSend, imageData);
             this.addMessage('ai', response);
         } catch (error) {

@@ -135,17 +135,9 @@ const ChatManager = {
     async getAIResponse(userText) {
         this.isWaiting = true;
 
-        // 判斷是否需要截圖 (智慧觸發)
-        const needsVision = /看|這|姿態|怎麼了|為什麼|掛了|卡住/.test(userText) ||
-            getSimplifiedAnalytics().physics.hasConflict;
-
-        let imageData = null;
-        if (needsVision) {
-            this.updateStatus("觀察畫面中...");
-            imageData = this.captureCanvas();
-        } else {
-            this.updateStatus("思考中...");
-        }
+        // 強制開啟視覺診斷：每一則對話都附帶截圖
+        this.updateStatus("觀察畫面中...");
+        let imageData = this.captureCanvas();
 
         const analytics = getSimplifiedAnalytics();
         const currentParams = analytics.params;
@@ -214,7 +206,7 @@ ${userText}`;
 
         // 紀錄本次通訊到歷史卡片 (偵錯用)
         const historyToSend = this.history.slice(0, -1);
-        const historyText = historyToSend.map(h => `[${h.role.toUpperCase()}]: ${h.parts[0].text.substring(0, 50)}...`).join('\n');
+        const historyText = historyToSend.map(h => `[${h.role.toUpperCase()}]: ${h.parts[0].text}`).join('\n');
 
         this.debugHistory.push({
             timestamp: Date.now(),

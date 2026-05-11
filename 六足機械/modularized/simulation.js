@@ -1420,7 +1420,7 @@ export function getSimplifiedAnalytics() {
             blueLink: Math.round(L_blue / globalScale),
             bodyWidth: Math.round(S / globalScale),
             crankRadius: Math.round(R), // R 通常沒縮放，但取整較美觀
-            phaseDiff: Math.round(phaseDiff),
+            phaseDiff: Math.round((phaseDiff / Math.PI) * 180),
             speed: Math.round(simSpeed * 10) / 10
         },
 

@@ -190,37 +190,15 @@ export class BGScroller {
         this.layers.filter(l => l.type === type).forEach(l => l.speed = newSpeed);
     }
 
-    update(deltaX = 0) {
+    update() {
         if (!this.isInitialized) return;
         const horizon = this.getHorizon();
 
         this.spawnCloud(horizon);
         this.spawnTree(horizon);
 
-        // 雲朵具有微幅的自主左移 + 與機器人位移產生的視差
-        this.activeClouds.forEach(c => {
-            c.x -= (c.speed + deltaX * 0.15);
-        });
-
-        // 樹木與地面完全同步滾動
-        this.activeTrees.forEach(t => {
-            t.update(deltaX);
-        });
-
-        // 更新背景層的滾動位移 (使用 deltaX 代替時間步進速度)
-        this.layers.forEach(l => {
-            if (l.type === 'ground') {
-                l.scrollX += deltaX;
-            } else if (l.type === 'hill1') {
-                l.scrollX += deltaX * 0.4;
-            } else if (l.type === 'hill2') {
-                l.scrollX += deltaX * 0.15;
-            } else if (l.type === 'cloud') {
-                l.scrollX += deltaX * 0.2;
-            } else {
-                l.scrollX += l.speed;
-            }
-        });
+        this.activeClouds.forEach(c => c.update());
+        this.activeTrees.forEach(t => t.update(this.config.speeds.ground));
 
         const scale = this.getGlobalScale();
         this.activeClouds = this.activeClouds.filter(c => !c.isOffScreen(scale));
@@ -298,20 +276,14 @@ class BackgroundLayer extends Sprite {
         this.scrollX = 0;
     }
 
-    update() {
-        this.scrollX += this.speed;
-    }
-
     draw(ctx, canvasWidth, canvasHeight, targetBottomPercent, globalScale) {
         const { w, h } = this.getDimensions(globalScale);
-        
-        // 僅在繪製時取模以防超出，不修改 scrollX 本身的值
-        const currentScrollX = this.scrollX % w;
+        this.scrollX = (this.scrollX + this.speed) % w;
 
         const yPos = (canvasHeight * targetBottomPercent) - h;
         const overlap = 1.5;
 
-        for (let x = -currentScrollX; x < canvasWidth; x += w) {
+        for (let x = -this.scrollX; x < canvasWidth; x += w) {
             ctx.drawImage(this.image, x, yPos, w + overlap, h);
         }
     }

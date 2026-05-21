@@ -165,11 +165,12 @@ function updateCrankPosition() {
 updateCrankPosition();
 
 let theta = 0;
-let phaseDiff = Math.PI; // 相位差預設 180 度 (Half-cycle out of phase)
-let isPlaying = false; // 預設停止播放，使機器人靜態站立
+let phaseDiff = 0; // 相位差預設 0 度 (User requested)
+let isPlaying = true;
 let showPaths = false;
 let simSpeed = -0.1;
 let gravityScale = 1.0;
+let povMode = 'world';
 let isAdminMode = true; // Hidden Admin Authority
 let overlayAlpha = 0;   // For smooth fade in/out
 let isSlowMo = false;
@@ -181,27 +182,41 @@ let isLooping = false;
 let playOnePeriod = false;
 let accumulatedTheta = 0;
 
-// 正向物理狀態變數
-let bodyX = 0;
-let prevBodyX = 0; // 追蹤上一幀的機身世界 X 座標，用於計算相對背景位移
-let bodyY = 0; // 由觸地約束決定
-let bodyRoll = 0; // 機身傾角 (弧度)
-let bodyRollVel = 0;
-const y_ground = 0; // 固定地面世界座標
-let lockedPivotIndex = -1; // 鎖定的水平推進支點 (-1 表示未鎖定)
-let pivotWorldX = 0; // 支點在世界坐標系中的固定位置
+// Physics State
+let smoothedGround = { m: 0, c: groundY_Ideal };
+let prevM = 0; // Track previous ground slope for movement projection
+let angularVel = 0;
+let isTorqueMode = false;
+let lockedPivot = null;
+let lockedPivotIndex = -1;
+let hopY = 0;       // Dynamic vertical bounce offset
+let hopVel = 0;     // Velocity of the body spring
+let hopStrength = 0.4;
+let hopDamping = 0.85;
+let prevKinematicY = null;
 
-// 統計與診斷相關變數（保留聲明以防止其他模組報錯）
+// --- Distance & Speed Tracking Variables ---
+// Physics & Inertia State
+let jitterX = 0;
+let jitterY = 0;
+let jitterM = 0; // Tilt jitter
+let lastFrameTime = performance.now();
+let globalSimTime = 0; // Total accumulated simulation time
+let prevFeet = null;
+let prevGroundedFeetIndices = [];
+let currentWorldX = 0;
+
+// Per-foot tracking to precisely measure ground-contact duration and distance
+let footTracking = Array(6).fill(null).map(() => ({ isGrounded: false, startX: 0, startTime: 0 }));
+
 let displayDist = 0;
 let displayTime = 0;
 let displaySpeed = 0;
-let smoothedSpeed = 0;
-let cycleAvgSpeed = 0;
+let smoothedSpeed = 0; // Real-time horizontal velocity (px/s) with EMA smoothing
+let cycleAvgSpeed = 0;  // Average speed over the last full crank cycle
 let lastCycleX = 0;
 let lastCycleTime = 0;
 let prevTheta = 0;
-let globalSimTime = 0;
-let lastFrameTime = performance.now();
 
 // --- Speed Visualization State ---
 // Scenic objects removed as requested
@@ -218,14 +233,23 @@ let lastFrameTime = performance.now();
  * @param {boolean} includeHop - Whether to apply the dynamic bounce offset
  */
 function mapCoords(p, includeHop = true) {
-    // p.x, p.y 是相對於機身中心的座標
-    const cosR = Math.cos(bodyRoll);
-    const sinR = Math.sin(bodyRoll);
-    // 1. 旋轉並平移至世界座標系 (不加 bodyX，使機器人在螢幕上水平靜止在起始位置)
-    const rx = p.x * cosR - p.y * sinR;
-    const ry = bodyY + p.x * sinR + p.y * cosR;
-    // 2. 世界座標系轉螢幕座標系 (y 軸向上，y_ground = 0 對應螢幕的 targetGy)
-    return { x: cx + rx * scale, y: targetGy - ry * scale };
+    let rx = p.x;
+    let ry = p.y;
+
+    if (povMode === 'world') {
+        let tiltRad = -Math.atan(smoothedGround.m + jitterM); // Apply jitter to tilt
+        const cosT = Math.cos(tiltRad);
+        const sinT = Math.sin(tiltRad);
+
+        let tempX = (p.x + jitterX) * cosT - (p.y + jitterY) * sinT; // Apply jitter x, y
+        let tempY = (p.x + jitterX) * sinT + (p.y + jitterY) * cosT;
+        let finalShiftY = (smoothedGround.c * cosT) - groundY_Ideal;
+
+        rx = tempX;
+        ry = tempY - finalShiftY;
+    }
+
+    return { x: cx + rx * scale, y: cy - (ry + (includeHop ? hopY : 0)) * scale };
 }
 
 function getIntersection(C1, r1, C2, r2) {
@@ -448,16 +472,15 @@ function renderSide(data, isFar, targetCtx = ctx) {
 /**
  * 繪製單個足部在地面上的陰影
  */
-/**
- * 繪製單個足部在地面上的陰影
- * @param {Object} footPosWorld - 足部在世界座標系下的位置 {x, y}
- */
-function drawFootShadow(footLocal) {
-    const visualPos = mapCoords(footLocal);
-    const distPx = targetGy - visualPos.y;
-    const dist = Math.max(0, distPx / scale);
+function drawFootShadow(footPos, ground) {
+    // 計算足部在地面上的投影點 (垂直向下)
+    const shadowY = ground.m * footPos.x + ground.c;
+    // 核心修正：距離計算需包含 hopY，使陰影能反應跳動高度
+    const dist = Math.abs(footPos.y + hopY - shadowY);
+
+    // 隨高度增加而變淡並縮小
     const maxDist = 35 * globalScale;
-    const opacity = Math.max(0, 0.25 * (1 - dist / maxDist));
+    const opacity = Math.max(0, 0.25 * (1 - dist / maxDist)); // Increased transparency (0.45 -> 0.25)
     if (opacity <= 0) return;
 
     const baseWidth = 14 * scale;
@@ -466,8 +489,12 @@ function drawFootShadow(footLocal) {
     const width = baseWidth * sizeMult;
     const height = baseHeight * sizeMult;
 
+    // 將地面點轉換為屏幕坐標 (地面不跟隨跳動)
+    const pos = mapCoords({ x: footPos.x, y: shadowY }, false);
+
     ctx.save();
-    ctx.translate(visualPos.x, targetGy);
+    ctx.translate(pos.x, pos.y);
+    // ctx.rotate(tilt); // Removed rotation per user request
     ctx.beginPath();
     ctx.ellipse(0, 0, width, height, 0, 0, Math.PI * 2);
     ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
@@ -479,163 +506,338 @@ function drawFootShadow(footLocal) {
  * Main Render and Physics Logic Loop
  */
 function renderFrame(currentTheta, recordPath, dt = 0.016) {
-    // 1. 基於固定水平面求解幾何 (斜率 m = 0)
-    const near = getLegPositions(currentTheta, 0);
-    const far = getLegPositions(currentTheta + phaseDiff, 0);
+    // 0. Clear Background (Set to transparent/clean state)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 更新幾何衝突狀態
+    // 0.1 Update & Render Background Scroller
+    if (isPlaying) {
+        // 同步背景速度與模擬速度 (負號是因為兩者方向定義可能不同)
+        const factor = isSlowMo ? 0.2 : 1.0;
+        const speedFactor = Math.abs(simSpeed * factor) * 10;
+        background.updateSpeed('ground', 1.2 * speedFactor);
+        background.updateSpeed('hill1', 0.5 * speedFactor);
+        background.updateSpeed('hill2', 0.2 * speedFactor);
+        background.update();
+    }
+    background.render(ctx);
+
+    // 0.1 Update Scenic Trees & Ground Particles (Removed)
+
+    // Clear off-screen buffer
+    offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+
+    // 使用前一幀的地面斜率來預估腳尖位置，確保平滑度
+    const near = getLegPositions(currentTheta, smoothedGround.m);
+    const far = getLegPositions(currentTheta + phaseDiff, smoothedGround.m);
+
+    // 更新全域衝突狀態
     isClashing = (near === null || far === null);
 
-    let deltaX = 0;
-
     if (near && far) {
-        const allFeetLocal = [
+
+        const allFeet = [
             near.foot_f, near.foot_m, near.foot_r,
             far.foot_f, far.foot_m, far.foot_r
         ];
 
-        // 2. 幾何約束求解：找出最低的兩隻支撐腳
-        let bestY = -Infinity;
-        let bestRoll = 0;
-        let bestPair = null;
+        // 2. Determine Static Ground Plane
+        let validLines = [];
+        for (let i = 0; i < allFeet.length; i++) {
+            for (let j = i + 1; j < allFeet.length; j++) {
+                let p1 = allFeet[i], p2 = allFeet[j];
+                let dx = p2.x - p1.x;
+                if (Math.abs(dx) < 0.01) continue;
 
-        for (let i = 0; i < 6; i++) {
-            for (let j = i + 1; j < 6; j++) {
-                const p1 = allFeetLocal[i];
-                const p2 = allFeetLocal[j];
-                
-                // 為了數值穩定，兩隻腳在 x 軸上的距離不能太近
-                if (Math.abs(p1.x - p2.x) < 5.0) continue;
+                let m = (p2.y - p1.y) / dx;
+                let c = p1.y - m * p1.x;
 
-                // 求解使這兩腳剛好切齊地面的 bodyRoll
-                const roll = Math.atan2(p2.y - p1.y, p1.x - p2.x);
-                
-                // 求解對應的機身高度 bodyY
-                const tempY = -(p1.x * Math.sin(roll) + p1.y * Math.cos(roll));
-
-                // 物理限制：防止機身翻轉（機身中心必須高於地面，且傾角不得大於 45°）
-                if (tempY < 0 || Math.abs(roll) > Math.PI / 4) continue;
-
-                // 檢查是否有任何腳會穿透地面
-                let isValid = true;
-                for (let k = 0; k < 6; k++) {
-                    const pk = allFeetLocal[k];
-                    const y_world_k = tempY + pk.x * Math.sin(roll) + pk.y * Math.cos(roll);
-                    if (y_world_k < -0.1) { // 允許極小的浮點誤差
-                        isValid = false;
-                        break;
+                let allAbove = true;
+                for (let k = 0; k < allFeet.length; k++) {
+                    if (k === i || k === j) continue;
+                    if (allFeet[k].y < (m * allFeet[k].x + c) - 0.2) {
+                        allAbove = false; break;
                     }
                 }
 
-                // 在所有合法的支撐對中，選擇能把機身撐得最高（bodyY 最大）的組合
-                if (isValid && tempY > bestY) {
-                    bestY = tempY;
-                    bestRoll = roll;
-                    bestPair = [i, j];
+                if (allAbove) {
+                    let minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x);
+                    if (minX <= 2.0 && maxX >= -2.0) validLines.push({ m, c, p1, p2 });
                 }
             }
         }
 
-        // 如果沒有找到合法的兩腳組合（極端情況），退化為單足最高點支撐，保持水平
-        if (bestPair === null) {
-            bestRoll = 0;
-            bestY = -Math.min(...allFeetLocal.map(f => f.y));
+        let groundLine;
+        if (validLines.length > 0) {
+            // 穩定化：優先選擇支撐基底最廣的線段，防止坡度突跳
+            groundLine = validLines.reduce((best, curr) => {
+                const bestWidth = Math.abs(best.p1.x - best.p2.x);
+                const currWidth = Math.abs(curr.p1.x - curr.p2.x);
+                return currWidth > bestWidth ? curr : best;
+            }, validLines[0]);
+        } else {
+            let lowest = allFeet.reduce((min, p) => p.y < min.y ? p : min, allFeet[0]);
+            groundLine = { m: smoothedGround.m, c: lowest.y - (smoothedGround.m * lowest.x), p1: lowest, p2: lowest };
         }
 
-        // 套用求得的高度與傾角
-        bodyY = bestY;
-        bodyRoll = bestRoll;
+        // 3. Update Physics (Tipping Dynamics)
+        const targetM = groundLine.m;
+        const targetC = groundLine.c;
+        const diffM = targetM - smoothedGround.m;
 
-        // 3. 幾何水平推進求解 (Kinematic Propulsion)
-        // 直接使用剛剛求得的精確支撐腳作為著地腳
-        const groundedIndices = bestPair !== null ? bestPair : [];
+        if (!isTorqueMode) {
+            if (Math.abs(diffM) > 0.04) {
+                isTorqueMode = true;
+                let pivotObj = Math.abs(groundLine.p1.x) < Math.abs(groundLine.p2.x) ? groundLine.p1 : groundLine.p2;
+                lockedPivotIndex = allFeet.indexOf(pivotObj);
+                lockedPivot = allFeet[lockedPivotIndex];
+            } else {
+                smoothedGround.m = targetM;
+                smoothedGround.c = targetC;
+            }
+        }
 
-        // 如果當前鎖定的支點已經離地，則切換支點
-        if (groundedIndices.length > 0 && !groundedIndices.includes(lockedPivotIndex)) {
-            // 選擇一個新的支點，優先選最靠近中心的腳 (x' 接近 0 的中足)
-            let bestPivot = groundedIndices[0];
-            let minAbsX = Math.abs(allFeetLocal[bestPivot].x);
-            for (let idx of groundedIndices) {
-                if (Math.abs(allFeetLocal[idx].x) < minAbsX) {
-                    minAbsX = Math.abs(allFeetLocal[idx].x);
-                    bestPivot = idx;
+        if (isTorqueMode) {
+            if (lockedPivotIndex !== -1) lockedPivot = allFeet[lockedPivotIndex];
+
+            let damping = 0.94, stiffness = 0.008 * gravityScale;
+            angularVel += diffM * stiffness;
+            angularVel *= damping;
+
+            let oldM = smoothedGround.m;
+            smoothedGround.m += angularVel;
+            smoothedGround.c = lockedPivot.y - (smoothedGround.m * lockedPivot.x);
+
+            const hasOvershot = (targetM > oldM) ? (smoothedGround.m > targetM) : (smoothedGround.m < targetM);
+            const feetClash = allFeet.some(f => f.y < (smoothedGround.m * f.x + smoothedGround.c - 0.8));
+
+            if (hasOvershot || feetClash || Math.abs(angularVel) < 0.0001) {
+                isTorqueMode = false;
+                lockedPivotIndex = -1;
+                smoothedGround.m = targetM;
+                smoothedGround.c = targetC;
+                angularVel = 0;
+            }
+        }
+
+        // --- 3.5 Dynamic Hop Physics (動態跳動積分) ---
+        const currentKinematicY = -smoothedGround.c;
+        if (prevKinematicY !== null && isPlaying) {
+            // 計算幾何上升速度 (只有上升時會「踢」動彈簧)
+            let liftVel = (currentKinematicY - prevKinematicY) / dt;
+            // 穩定化：限制單次衝量上限
+            liftVel = Math.max(0, Math.min(liftVel, 15));
+
+            // 基礎剛性
+            const springStiffness = 0.15;
+
+            // 速度縮放：速度越快，推動力越強 (線性關係較為穩定)
+            const speedFactor = Math.min(3.0, Math.abs(simSpeed) * 0.5);
+
+            // 如果幾何上正在往上推，給予彈簧一個衝量
+            if (liftVel > 0) {
+                hopVel += liftVel * hopStrength * speedFactor;
+            }
+
+            // 彈簧受力公式：Accel = -kx - bv
+            // 阻尼系數調整為 1 - damping
+            let hopAccel = (-hopY * springStiffness) - (hopVel * (1.0 - hopDamping));
+            hopVel += hopAccel;
+            hopY += hopVel;
+
+            // 穩定化：限制速度上限
+            hopVel = Math.max(-20, Math.min(hopVel, 20));
+
+            // 安全邊界：防止過度震盪或飛走
+            if (hopY < -5) { hopY = -5; hopVel = 0; }
+            if (hopY > 50) { hopY = 50; hopVel = 0; }
+        }
+        prevKinematicY = currentKinematicY;
+
+        // 4. Movement Distance Tracking (追蹤地面支點的相對位移)
+        let frameDx = 0;
+        let currentGroundedFeetIndices = [];
+
+        // 獨立判斷哪些腳目前在地上 (寬鬆觸地判定，容許 1.0 誤差)
+        for (let i = 0; i < allFeet.length; i++) {
+            let f = allFeet[i];
+            let expectedY = smoothedGround.m * f.x + smoothedGround.c;
+            if (Math.abs(f.y - expectedY) < 1.0) {
+                currentGroundedFeetIndices.push(i);
+            }
+        }
+
+        if (prevFeet) {
+            const getWX = (p, m) => {
+                const alpha = -Math.atan(m);
+                return (p.x * Math.cos(alpha) - p.y * Math.sin(alpha));
+            };
+
+            if (isTorqueMode && lockedPivotIndex !== -1) {
+                // 旋轉階段由當前鎖定的支腳產生推進位移 (考慮傾角變化帶來的水平推力)
+                const prevWX = getWX(prevFeet[lockedPivotIndex], prevM);
+                const currWX = getWX(allFeet[lockedPivotIndex], smoothedGround.m);
+                frameDx = (prevWX - currWX);
+            } else {
+                let commonFeet = currentGroundedFeetIndices.filter(idx => prevGroundedFeetIndices.includes(idx));
+                if (commonFeet.length > 0) {
+                    let sumDx = 0;
+                    for (let idx of commonFeet) {
+                        const prevWX = getWX(prevFeet[idx], prevM);
+                        const currWX = getWX(allFeet[idx], smoothedGround.m);
+                        sumDx += (prevWX - currWX);
+                    }
+                    frameDx = (sumDx / commonFeet.length);
+                } else if (prevGroundedFeetIndices.length > 0) {
+                    let sumDx = 0;
+                    for (let idx of prevGroundedFeetIndices) {
+                        const prevWX = getWX(prevFeet[idx], prevM);
+                        const currWX = getWX(allFeet[idx], smoothedGround.m);
+                        sumDx += (prevWX - currWX);
+                    }
+                    frameDx = (sumDx / prevGroundedFeetIndices.length);
                 }
             }
-            lockedPivotIndex = bestPivot;
-            
-            // 記錄該支點當前在世界座標系的水平位置
-            const px = allFeetLocal[lockedPivotIndex].x;
-            const py = allFeetLocal[lockedPivotIndex].y;
-            pivotWorldX = bodyX + px * Math.cos(bodyRoll) - py * Math.sin(bodyRoll);
         }
 
-        // 根據鎖定的支點，反推機身的水平位置 bodyX，確保支點不打滑
-        if (lockedPivotIndex !== -1) {
-            const px = allFeetLocal[lockedPivotIndex].x;
-            const py = allFeetLocal[lockedPivotIndex].y;
-            bodyX = pivotWorldX - (px * Math.cos(bodyRoll) - py * Math.sin(bodyRoll));
+        prevM = smoothedGround.m;
+
+        prevGroundedFeetIndices = currentGroundedFeetIndices;
+        currentWorldX += frameDx;
+
+        prevFeet = allFeet.map(f => ({ x: f.x, y: f.y }));
+
+        // 4.1 Real-time Speed Tracking (Aggressive EMA + Friction Filter)
+        if (dt > 0 && recordPath) { // Only update speed when isPlaying is true
+            let instantaneousSpeed = frameDx / dt; // pixels per second
+
+            // --- Friction/Jitter Threshold ---
+            // If movement opposes the direction of rotation (simSpeed) and is weak, treat as jitter
+            const isOpposite = (simSpeed > 0 && instantaneousSpeed < 0) || (simSpeed < 0 && instantaneousSpeed > 0);
+            if (isOpposite && Math.abs(instantaneousSpeed) < 10) {
+                instantaneousSpeed = 0;
+            }
+
+            // Use alpha 0.05 (instead of 0.15) for much higher stability
+            smoothedSpeed = 0.95 * smoothedSpeed + 0.05 * instantaneousSpeed;
+            if (Math.abs(smoothedSpeed) < 0.5) smoothedSpeed = 0;
         }
 
-        // 計算本幀的水平位移量 (像素)
-        deltaX = (bodyX - prevBodyX) * scale;
-        prevBodyX = bodyX;
-    }
+        // 4.5. Mechanical Inertia Reaction (慣性反作用力模擬)
+        // Use gravityScale as a mass/force multiplier
+        const forceScale = 0.05 * gravityScale;
+        // Crank reaction (equal and opposite to crank mass movement)
+        // When crank swings back (-cos), body reacts forward (+cos)
+        jitterX = -Math.cos(currentTheta) * R * forceScale;
+        jitterY = -Math.sin(currentTheta) * R * forceScale;
+        // Tilt reaction (subtle pulse at the back)
+        jitterM = Math.sin(currentTheta - Math.PI / 4) * (R / S) * forceScale;
 
-    // --- 開始繪製背景與機器人 ---
-    const cx = canvas.width / 2;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // 5. Individual Foot Contact Tracking (單次觸地資料統計)
+        let actualGrounded = new Set(currentGroundedFeetIndices);
+        if (isTorqueMode && lockedPivotIndex !== -1) {
+            actualGrounded.add(lockedPivotIndex);
+        }
 
-    // 更新背景位移與渲染背景
-    background.update(deltaX);
-    background.render(ctx);
+        for (let i = 0; i < 6; i++) {
+            let isGroundedNow = actualGrounded.has(i);
+            let track = footTracking[i];
 
-    if (near && far) {
-        const allFeetLocal = [
-            near.foot_f, near.foot_m, near.foot_r,
-            far.foot_f, far.foot_m, far.foot_r
-        ];
+            if (isGroundedNow && !track.isGrounded) {
+                // Foot just touched the ground
+                track.isGrounded = true;
+                track.startX = currentWorldX;
+                track.startTime = globalSimTime;
+            } else if (!isGroundedNow && track.isGrounded) {
+                // Foot just lifted off the ground - Calculate its duration and distance
+                track.isGrounded = false;
+                let dx = Math.abs(currentWorldX - track.startX);
+                let t = globalSimTime - track.startTime;
 
-        // 4. 計算各腳掌在世界座標系下的位置
-        const allFeetWorld = allFeetLocal.map(f => ({
-            x: bodyX + f.x * Math.cos(bodyRoll) - f.y * Math.sin(bodyRoll),
-            y: bodyY + f.x * Math.sin(bodyRoll) + f.y * Math.cos(bodyRoll)
-        }));
+                // Ignore extremely tiny micro-bounces (< 0.05s)
+                if (t > 0.05) {
+                    displayDist = dx;
+                    displayTime = t;
+                    displaySpeed = t > 0 ? (dx / t) : 0;
+                }
+            }
+        }
 
-        // 3. 繪製足部在地面上的陰影 (將 world 傳參改為 local 傳參)
-        allFeetLocal.forEach(f => drawFootShadow(f));
+        // 6. Record Paths
+        if (recordPath) {
+            paths.near.f.push({ ...near.foot_f }); paths.near.m.push({ ...near.foot_m }); paths.near.r.push({ ...near.foot_r });
+            paths.far.f.push({ ...far.foot_f }); paths.far.m.push({ ...far.foot_m }); paths.far.r.push({ ...far.foot_r });
 
-        // 4. 繪製固定水平地平面 (世界座標 y = 0 對應螢幕的 targetGy)
+            if (paths.near.f.length > maxPathLen) {
+                paths.near.f.shift(); paths.near.m.shift(); paths.near.r.shift();
+                paths.far.f.shift(); paths.far.m.shift(); paths.far.r.shift();
+            }
+        }
+
+        // 5.9 Individual Foot Shadows (Draw before robot paths and body)
+        allFeet.forEach(f => drawFootShadow(f, smoothedGround));
+
+        // Ground fill removed, only path remains
+        ctx.restore();
+
+
+        // Ground Top Line
         ctx.beginPath();
-        ctx.moveTo(0, targetGy);
-        ctx.lineTo(canvas.width, targetGy);
-        ctx.strokeStyle = '#334155'; // 暗板岩色地面線
+        if (povMode === 'robot') {
+            const gX1 = -1000, gX2 = 1000;
+            const gm1 = mapCoords({ x: gX1, y: smoothedGround.m * gX1 + smoothedGround.c }, false);
+            const gm2 = mapCoords({ x: gX2, y: smoothedGround.m * gX2 + smoothedGround.c }, false);
+            ctx.moveTo(gm1.x, gm1.y);
+            ctx.lineTo(gm2.x, gm2.y);
+        } else {
+            const gy = cy - groundY_Ideal * scale;
+            ctx.moveTo(0, gy);
+            ctx.lineTo(canvas.width, gy);
+        }
+        ctx.strokeStyle = (povMode === 'robot') ? '#000000' : 'rgba(0, 0, 0, 0)';
         ctx.lineWidth = 3;
         ctx.stroke();
 
-        // 5. 渲染 Far 側腳 (繪製至 offscreen Canvas 以處理半透明)
-        offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        drawPath(paths.far.f, 'rgba(239, 68, 68, 0.2)', [3, 3], false);
+        drawPath(paths.far.m, 'rgba(34, 197, 94, 0.2)', [3, 3], false);
+        drawPath(paths.far.r, 'rgba(59, 130, 246, 0.2)', [3, 3], false);
+
+        drawPath(paths.near.f, 'rgba(239, 68, 68, 0.7)', [5, 5], false);
+        drawPath(paths.near.m, 'rgba(34, 197, 94, 0.7)', [5, 5], false);
+        drawPath(paths.near.r, 'rgba(59, 130, 246, 0.7)', [5, 5], false);
+
+        // --- Render Far Side (Grouped Transparency) ---
+        // 1. Draw to off-screen buffer with OPAQUE but FADED colors
         renderSide(far, true, offCtx);
 
-        // 6. 渲染機器人整體結構 (利用 robotCanvas 做快取)
+        // --- 7. Robot Rendering (Buffered for Motion Blur) ---
+        // 7.1 Clear robot buffer
         robotCtx.clearRect(0, 0, robotCanvas.width, robotCanvas.height);
-        
-        // 繪製 Far 側
+
+        // 7.2 Draw Environment & Far Side to robot buffer
+        offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+        // Scenic objects drawing removed
+
+
+        renderSide(far, true, offCtx);
         robotCtx.save();
         robotCtx.globalAlpha = 0.75;
         robotCtx.drawImage(offscreenCanvas, 0, 0);
         robotCtx.restore();
 
-        // 繪製連接件與機身主樑 (使用相對機身中心的局部高度 bodyYLocal)
-        const bodyYLocal = -bodyYOffset;
+        // 7.3 Draw Structural Connections & Body to robot buffer
+        const bodyY = -bodyYOffset;
         const connection_width = 12;
-        drawLine(Pf, { x: Pf.x, y: bodyYLocal }, '#64748b', connection_width, robotCtx);
-        drawLine(Pr, { x: Pr.x, y: bodyYLocal }, '#64748b', connection_width, robotCtx);
+        drawLine(Pf, { x: Pf.x, y: bodyY }, '#64748b', connection_width, robotCtx);
+        drawLine(Pr, { x: Pr.x, y: bodyY }, '#64748b', connection_width, robotCtx);
 
-        // 繪製馬達與齒輪箱
-        const bodyCenterPos = mapCoords({ x: gearboxShiftX, y: bodyYLocal });
-        const bp1 = mapCoords({ x: -S, y: bodyYLocal });
-        const bp2 = mapCoords({ x: S, y: bodyYLocal });
+        // 7.4 Draw Motor & Gearbox to robot buffer
+        const bodyCenterPos = mapCoords({ x: gearboxShiftX, y: bodyY });
+        const bp1 = mapCoords({ x: -S, y: bodyY });
+        const bp2 = mapCoords({ x: S, y: bodyY });
         const bodyAngle = Math.atan2(bp2.y - bp1.y, bp2.x - bp1.x);
+
         const customGearboxScale = (bodyYOffset * scale - 6) / 12.5;
 
         robotCtx.save();
@@ -643,9 +845,13 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         robotCtx.rotate(bodyAngle);
         robotCtx.scale(customGearboxScale, customGearboxScale);
 
-        // 繪製馬達
+        // --- DRAW MOTOR (Below Gearbox) ---
+        // Motor is translated by (52, 2.5) relative to gearbox (0,0)
+        // Since gearbox is translated by (-25.0, -27), motor is at (-25.0 + 52, -27 + 2.5) = (27, -24.5)
         robotCtx.save();
         robotCtx.translate(27.0, -24.5);
+
+        // Define motor sectional fills (using manual rects to match SVG look)
         robotCtx.fillStyle = motorLightGrey;
         robotCtx.fillRect(0, 0, 10.5, 4);
         robotCtx.fillRect(0, 16, 10.5, 4);
@@ -655,17 +861,21 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         robotCtx.fillRect(10.5, 0, 5, 20);
         robotCtx.fillStyle = motorDarkGrey;
         robotCtx.fillRect(10.5, 6.25, 3, 7.5);
+
+        // Fills for protrusions (simplified)
         robotCtx.fillStyle = '#f0f0f0';
         robotCtx.fillRect(15.5, 5, 2.5, 10);
         robotCtx.fillStyle = '#DCDCDC';
         robotCtx.fillRect(18.0, 9, 1.0, 2);
 
+        // Motor Outline
         robotCtx.strokeStyle = '#333333';
         robotCtx.lineWidth = 0.1;
         if (typeof motorSVGPath !== 'undefined') {
             robotCtx.stroke(motorSVGPath);
         }
 
+        // Bronze Parts
         const drawBronze = (bx, by, isBottom) => {
             robotCtx.fillStyle = motorBronze;
             robotCtx.strokeStyle = motorBronzeStroke;
@@ -683,6 +893,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             robotCtx.closePath();
             robotCtx.fill(); robotCtx.stroke();
 
+            // Hole in bronze
             robotCtx.fillStyle = '#ffffff';
             robotCtx.beginPath();
             if (!isBottom) {
@@ -699,9 +910,10 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         };
         drawBronze(11.5, 6.25, false);
         drawBronze(11.5, 13.75, true);
+
         robotCtx.restore();
 
-        // 繪製齒輪箱
+        // --- DRAW GEARBOX (On Top) ---
         robotCtx.save();
         robotCtx.translate(-25.0, -27);
         robotCtx.fillStyle = gearboxFill;
@@ -723,28 +935,51 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 
         robotCtx.restore();
 
-        // 繪製機身主橫梁結構
-        drawLine({ x: -S - 15, y: bodyYLocal }, { x: S + 15, y: bodyYLocal }, '#94a3b8', 12, robotCtx);
+        // 7.5 Draw Body Main Beam & Pivot Points to robot buffer
+        drawLine({ x: -S - 15, y: bodyY }, { x: S + 15, y: bodyY }, '#94a3b8', 12, robotCtx);
         drawPoint(Pf, '#0f172a', 6, robotCtx);
         drawPoint(Pr, '#0f172a', 6, robotCtx);
         drawPoint(C_crank, '#ef4444', 7, robotCtx);
 
-        // 渲染 Near 側腳
+        // 7.6 Draw Near Side to robot buffer
         renderSide(near, false, robotCtx);
 
-        // 繪製快取畫布至螢幕
+        // 7.7 Now render the robotCanvas to the main ctx with Motion Blur
+        const { echoCount, echoOffsetMult, echoBaseAlpha } = speedVizConfig;
+
+        // Draw the Echoes (Ghosts) - Driven by stable cycle average
+        const vizSpeed = isPlaying ? cycleAvgSpeed : 0;
+        if (Math.abs(vizSpeed) > 1) {
+            for (let i = echoCount; i >= 1; i--) {
+                const offsetX = -vizSpeed * echoOffsetMult * i * scale;
+                const alpha = (echoBaseAlpha / i) * Math.min(1.0, Math.abs(vizSpeed) / 30);
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.drawImage(robotCanvas, offsetX, 0);
+                ctx.restore();
+            }
+        }
+
+        // Final main robot on top
         ctx.drawImage(robotCanvas, 0, 0);
 
-        // --- 高亮著地足 (當前最底部的腳掌在世界座標 y < 0.1) ---
+        // --- HIGHLIGHT GROUND PIVOT POINTS ---
         if (overlayAlpha > 0.01) {
             ctx.save();
             ctx.globalAlpha = overlayAlpha;
-            for (let i = 0; i < 6; i++) {
-                const f_world = allFeetWorld[i];
-                if (f_world.y < 0.1) {
-                    const f_local = allFeetLocal[i];
-                    drawPoint(f_local, '#ef4444', 5, ctx);
-                    const mp = mapCoords(f_local);
+            if (isTorqueMode && lockedPivot) {
+                drawPoint(lockedPivot, '#ef4444', 6, ctx, false);
+                const mp = mapCoords(lockedPivot, false);
+                ctx.beginPath();
+                ctx.arc(mp.x, mp.y, 14, 0, Math.PI * 2);
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            } else if (prevGroundedFeetIndices && prevGroundedFeetIndices.length > 0) {
+                for (let idx of prevGroundedFeetIndices) {
+                    let f = allFeet[idx];
+                    drawPoint(f, '#ef4444', 5, ctx, false);
+                    const mp = mapCoords(f, false);
                     ctx.beginPath();
                     ctx.arc(mp.x, mp.y, 10, 0, Math.PI * 2);
                     ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
@@ -760,16 +995,19 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         ctx.font = 'bold 22px system-ui';
         ctx.textAlign = 'center';
         ctx.fillText('幾何約束衝突！請嘗試減小曲柄半徑。', canvas.width / 2, canvas.height / 2);
+        prevFeet = null;
+        prevGroundedFeetIndices = [];
+        // Reset tracking on clash
+        footTracking.forEach(track => track.isGrounded = false);
     }
 
-    // 8. 繪製統計數據面板 (僅在管理員模式下顯示)
+    // 8. Render Movement Statistics Overlay (右上角數值面板) - Only in Admin Mode (with Fade)
     if (overlayAlpha > 0.01) {
         ctx.save();
         ctx.globalAlpha = overlayAlpha;
         drawOverlayStats();
         ctx.restore();
     }
-
     // 紀錄數據用於 AI 診斷
     if (typeof recordAnalyticsData === 'function') {
         recordAnalyticsData();
@@ -839,7 +1077,7 @@ function animate() {
         // Check for wrapping in both directions
         const crossedZero = (prevTheta > theta && simSpeed > 0) || (prevTheta < theta && simSpeed < 0);
         if (crossedZero) {
-            const dx = Math.abs(bodyX - lastCycleX);
+            const dx = Math.abs(currentWorldX - lastCycleX);
             const dt_cycle = globalSimTime - lastCycleTime;
             if (dt_cycle > 0.05) { // Minimum 0.05s to avoid tiny slivers
                 const newAvg = dx / dt_cycle;
@@ -847,7 +1085,7 @@ function animate() {
                 const alpha = cycleAvgSpeed === 0 ? 1.0 : 0.3;
                 cycleAvgSpeed = (1 - alpha) * cycleAvgSpeed + alpha * newAvg;
             }
-            lastCycleX = bodyX;
+            lastCycleX = currentWorldX;
             lastCycleTime = globalSimTime;
         }
         prevTheta = theta;
@@ -879,11 +1117,12 @@ function animate() {
 
     renderFrame(theta, isPlaying, dt);
 
-    if (isPlaying || (isAdminMode && overlayAlpha < 1) || (!isAdminMode && overlayAlpha > 0)) {
+    if (isPlaying || isTorqueMode || Math.abs(angularVel) > 0.001 || (isPlaying && smoothedSpeed > 0.1) || (isAdminMode && overlayAlpha < 1) || (!isAdminMode && overlayAlpha > 0)) {
         isLooping = true;
         requestAnimationFrame(animate);
     } else {
         isLooping = false;
+        // smoothedSpeed = 0; // Commented out to freeze speed on pause
         renderFrame(theta, false, 0); // Final render to update UI
     }
 
@@ -900,7 +1139,6 @@ function animate() {
 function triggerUpdate() {
     if (!isLooping) {
         lastFrameTime = performance.now(); // Reset time to avoid large jumps when unpausing
-        prevBodyX = bodyX; // 同步 prevBodyX 避免暫停後恢復播放時背景瞬間跳變！
         animate();
     }
 }
@@ -1014,6 +1252,14 @@ document.getElementById('phaseSlider').addEventListener('input', (e) => {
     triggerUpdate();
 });
 
+document.getElementById('povBtn').addEventListener('click', (e) => {
+    povMode = povMode === 'world' ? 'robot' : 'world';
+    const text = povMode === 'world' ? "視角：以世界為中心" : "視角：以機器人為中心";
+    e.target.innerText = text;
+    paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
+    triggerUpdate();
+});
+
 const setupSlider = (id, valId, callback) => {
     document.getElementById(id).addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
@@ -1049,8 +1295,9 @@ setupSlider('sSlider', 'sVal', (v) => {
 });
 
 function resetParameters() {
+    // 1. Reset variables to defaults (scaled)
     simSpeed = -0.1;
-    phaseDiff = Math.PI;
+    phaseDiff = 0;
     theta = 0;
     L_leg = 25.0 * globalScale;
     L_blue = 55.0 * globalScale;
@@ -1065,8 +1312,8 @@ function resetParameters() {
     // 2. Update UI Sliders
     document.getElementById('speedSlider').value = 0.1;
     document.getElementById('speedVal').innerText = "Low in battery";
-    document.getElementById('phaseSlider').value = 180;
-    document.getElementById('phaseVal').innerText = "180°";
+    document.getElementById('phaseSlider').value = 0;
+    document.getElementById('phaseVal').innerText = "0°";
     document.getElementById('angleSlider').value = 0;
     document.getElementById('angleVal').innerText = "0°";
     document.getElementById('lLegSlider').value = 25;
@@ -1093,17 +1340,25 @@ function resetParameters() {
     updateCrankPosition();
     paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
 
-    // 重設正向物理狀態
-    bodyX = 0;
-    prevBodyX = 0;
-    bodyY = 0;
-    bodyRoll = 0;
-    bodyRollVel = 0;
+    // Reset physics state if needed
+    isTorqueMode = false;
     lockedPivotIndex = -1;
-    pivotWorldX = 0;
+    smoothedGround.m = 0;
+    smoothedGround.c = groundY_Ideal;
+    angularVel = 0;
+    currentWorldX = 0;
     lastCycleX = 0;
     cycleAvgSpeed = 0;
     smoothedSpeed = 0;
+    hopY = 0;
+    hopVel = 0;
+    prevKinematicY = null;
+    hopStrength = 0.4;
+    hopDamping = 0.85;
+    document.getElementById('hopStrengthSlider').value = 0.4;
+    document.getElementById('hopStrengthVal').innerText = "0.40";
+    document.getElementById('hopDampingSlider').value = 0.85;
+    document.getElementById('hopDampingVal').innerText = "0.85";
 
     triggerUpdate();
 }

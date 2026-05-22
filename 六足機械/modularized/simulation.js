@@ -146,6 +146,7 @@ function updateRobotHeight() {
     targetGy = (top1 + top2 * ratio) / (ratio + 1);
     cy = targetGy + groundY_Ideal * scale;
     updateCrankPosition(); // 同步更新曲柄位置
+    triggerUpdate(); // 背景載入完成後，強制觸發渲染更新背景
 }
 updateRobotHeight();
 
@@ -170,7 +171,7 @@ let isPlaying = false; // 預設停止播放，使機器人靜態站立
 let showPaths = false;
 let simSpeed = -0.1;
 let gravityScale = 1.0;
-let isAdminMode = true; // Hidden Admin Authority
+let isAdminMode = false; // Hidden Admin Authority
 let overlayAlpha = 0;   // For smooth fade in/out
 let isSlowMo = false;
 
@@ -192,6 +193,9 @@ let lockedPivotIndex = -1; // 鎖定的水平推進支點 (-1 表示未鎖定)
 let pivotWorldX = 0; // 支點在世界坐標系中的固定位置
 let prevBodyRoll = 0; // 追蹤上一幀的機身傾角
 let prevFeetLocal = null; // 追蹤上一幀的所有腳掌相對於機身的坐標
+let lastGroundedIndices = [];
+let targetRoll = 0; // 當前目標傾角，用於物理收斂判定
+let isGroundLineValid = false; // 當前地表支撐線是否有效 (雙點支撐)
 
 // 統計與診斷相關變數（保留聲明以防止其他模組報錯）
 let displayDist = 0;
@@ -273,7 +277,7 @@ function getEllipticFootPoint(P_top, P_bottom, m = 0) {
     if (L_curr === 0) return P_bottom;
 
     const phi = Math.atan2(dy, dx);
-    const rot = phi - Math.PI / 2;
+    const rot = phi + Math.PI / 2;
 
     const s_fixed = (25.0 * globalScale) / 45.0;
     const a = 24.555 * s_fixed; // 精確匹配 SVG 寬度 (54.5 - 5.39) / 2
@@ -546,18 +550,39 @@ function computeNormalForces(groundedIndices, allFeetLocal, roll) {
     return weights;
 }
 
+/** 腳掌視為貼地的世界高度容差（極小浮點容差，無視覺緩衝） */
+const CONTACT_TOL = 0.2;
+/** 雙腳支撐對最小水平間距 */
+const MIN_PAIR_DX = 2.0 * globalScale;
+/** 機身最大傾角 */
+const MAX_BODY_ROLL = Math.PI / 3;
+
+function footWorldY(f, roll, bodyY) {
+    return bodyY + f.x * Math.sin(roll) + f.y * Math.cos(roll);
+}
+
+function requiredBodyYForFoot(f, roll) {
+    return -(f.x * Math.sin(roll) + f.y * Math.cos(roll));
+}
+
 /**
  * Main Render and Physics Logic Loop
  */
 function renderFrame(currentTheta, recordPath, dt = 0.016) {
-    // 1. 基於固定水平面求解幾何 (斜率 m = 0)
-    const near = getLegPositions(currentTheta, 0);
-    const far = getLegPositions(currentTheta + phaseDiff, 0);
+    try {
+        if (dt === 0) dt = 0.016; // 確保暫停時拖動滑桿也能正常平滑演進
+    // 1. 使用前一幀的地面斜率來預估腳尖位置，確保平滑度
+    const m_prev = -Math.tan(bodyRoll);
+    const near = getLegPositions(currentTheta, m_prev);
+    const far = getLegPositions(currentTheta + phaseDiff, m_prev);
 
     // 更新幾何衝突狀態
     isClashing = (near === null || far === null);
 
     let deltaX = 0;
+    let validLines = [];
+    let invalidCOMLines = [];
+    let groundLine = null;
 
     if (near && far) {
         const allFeetLocal = [
@@ -565,93 +590,99 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             far.foot_f, far.foot_m, far.foot_r
         ];
 
-        // 2. 幾何約束求解：找出最低的兩隻支撐腳
-        let bestY = -Infinity;
-        let bestRoll = 0;
-        let bestPair = null;
+        // 2. 尋找凸包下邊緣切線作為地面線 (移植自 buffer/simulation.js 邏輯)
+        validLines = [];
+        invalidCOMLines = [];
+        for (let i = 0; i < allFeetLocal.length; i++) {
+            for (let j = i + 1; j < allFeetLocal.length; j++) {
+                let p1 = allFeetLocal[i], p2 = allFeetLocal[j];
+                let dx = p2.x - p1.x;
+                if (Math.abs(dx) < 0.01) continue;
 
-        for (let i = 0; i < 6; i++) {
-            for (let j = i + 1; j < 6; j++) {
-                const p1 = allFeetLocal[i];
-                const p2 = allFeetLocal[j];
-                
-                // 為了數值穩定，兩隻腳在 x 軸上的距離不能太近
-                if (Math.abs(p1.x - p2.x) < 5.0) continue;
+                let m = (p2.y - p1.y) / dx;
+                let c = p1.y - m * p1.x;
 
-                // 求解使這兩腳剛好切齊地面的 bodyRoll (使用 Math.atan 確保傾角在 -90 到 90 度範圍內)
-                const roll = Math.atan((p2.y - p1.y) / (p1.x - p2.x));
-                
-                // 求解對應的機身高度 bodyY
-                const tempY = -(p1.x * Math.sin(roll) + p1.y * Math.cos(roll));
-
-                // 物理限制：防止機身翻轉（機身中心必須高於地面，且傾角不得大於 45°）
-                if (tempY < 0 || Math.abs(roll) > Math.PI / 4) continue;
-
-                // 檢查是否有任何腳會穿透地面
-                let isValid = true;
-                for (let k = 0; k < 6; k++) {
-                    const pk = allFeetLocal[k];
-                    const y_world_k = tempY + pk.x * Math.sin(roll) + pk.y * Math.cos(roll);
-                    if (y_world_k < -0.1) { // 允許極小的浮點誤差
-                        isValid = false;
+                let allAbove = true;
+                for (let k = 0; k < allFeetLocal.length; k++) {
+                    if (k === i || k === j) continue;
+                    if (allFeetLocal[k].y < (m * allFeetLocal[k].x + c) - 0.2 * globalScale) {
+                        allAbove = false;
                         break;
                     }
                 }
 
-                // 在所有合法的支撐對中，選擇能把機身撐得最高（bodyY 最大）的組合
-                if (isValid && tempY > bestY) {
-                    bestY = tempY;
-                    bestRoll = roll;
-                    bestPair = [i, j];
+                if (allAbove) {
+                    let minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x);
+                    // 重心橫跨支撐區間
+                    const comTolerance = S * 0.02; // 1% of total robot length (2 * S)
+                    if (minX <= comTolerance && maxX >= -comTolerance) {
+                        validLines.push({ m, c, p1, p2 });
+                    } else {
+                        invalidCOMLines.push({ m, c, p1, p2 });
+                    }
                 }
             }
         }
 
+        groundLine = null;
+        if (validLines.length > 0) {
+            groundLine = validLines.reduce((best, curr) => {
+                const bestDiff = Math.abs(-Math.atan(best.m) - bodyRoll);
+                const currDiff = Math.abs(-Math.atan(curr.m) - bodyRoll);
+                return currDiff < bestDiff ? curr : best;
+            }, validLines[0]);
+            isGroundLineValid = true;
+        } else {
+            let lowest = allFeetLocal.reduce((min, p) => p.y < min.y ? p : min, allFeetLocal[0]);
+            const m_curr = -Math.tan(bodyRoll);
+            groundLine = { m: m_curr, c: lowest.y - (m_curr * lowest.x), p1: lowest, p2: lowest };
+            isGroundLineValid = false;
+        }
+
+        targetRoll = -Math.atan(groundLine.m);
         let groundedIndices = [];
 
-        // Spring-damper 參數 (可調整手感)
-        const rollStiffness = 400; // rad/s²  越大越快跟上目標角度
-        const rollDamping   = 30;  // /s       越大越快停止振盪
+        let torque = 0;
+        let rollStiffness = 400;
+        const rollDamping = 30;
 
-        if (bestPair !== null) {
-            // Spring-damper：讓 bodyRoll 平滑趨向幾何目標角 bestRoll，而非瞬間跳躍
-            const rollErr = bestRoll - bodyRoll;
-            bodyRollVel += rollErr * rollStiffness * dt;
-            bodyRollVel -= bodyRollVel * rollDamping * dt;
-            bodyRoll += bodyRollVel * dt;
+        if (!isGroundLineValid) {
+            rollStiffness = 0;
+            // 單點支撐：重力矩 kicks in
+            const f = groundLine.p1; // lowest foot
+            const rx_foot = f.x * Math.cos(bodyRoll) - f.y * Math.sin(bodyRoll);
+            // 重力矩方向：若 rx_foot > 0 (支點在右邊)，重力使機身順時針轉 (bodyRoll 減小)
+            torque = -rx_foot * 10.0 * gravityScale;
+        }
 
-            // 從當前 bodyRoll (非目標) 重新計算 bodyY，使最低的支撐腳切齊地面
-            // 取兩腳所需高度的最大值，確保任一腳都不穿地
-            const p1 = allFeetLocal[bestPair[0]];
-            const p2 = allFeetLocal[bestPair[1]];
-            const y1 = -(p1.x * Math.sin(bodyRoll) + p1.y * Math.cos(bodyRoll));
-            const y2 = -(p2.x * Math.sin(bodyRoll) + p2.y * Math.cos(bodyRoll));
-            bodyY = Math.max(y1, y2);
+        const rollErr = targetRoll - bodyRoll;
+        bodyRollVel += (rollErr * rollStiffness + torque) * dt;
+        bodyRollVel -= bodyRollVel * rollDamping * dt;
+        bodyRoll += bodyRollVel * dt;
 
-            groundedIndices = bestPair;
-        } else {
-            // 單腳支撐：Spring 回水平（目標 roll = 0）
-            const rollErr = 0 - bodyRoll;
-            bodyRollVel += rollErr * rollStiffness * dt;
-            bodyRollVel -= bodyRollVel * rollDamping * dt;
-            bodyRoll += bodyRollVel * dt;
-
-            // 設定高度，使最低的腳剛好切齊地面 y = 0
-            bodyY = -Math.min(...allFeetLocal.map(f => f.x * Math.sin(bodyRoll) + f.y * Math.cos(bodyRoll)));
-
-            // 找出此時最低（在世界座標中）的腳掌作為觸地腳
+        // 以當前 roll 抬升機身，六腳皆不穿地；再依高度容差標記所有觸地腳
+        bodyY = Math.max(...allFeetLocal.map(f => requiredBodyYForFoot(f, bodyRoll)));
+        
+        // 判定哪些腳目前在地上 (寬鬆觸地判定，容許高度容差)
+        for (let k = 0; k < 6; k++) {
+            if (Math.abs(footWorldY(allFeetLocal[k], bodyRoll, bodyY)) <= CONTACT_TOL) {
+                groundedIndices.push(k);
+            }
+        }
+        if (groundedIndices.length === 0) {
             let lowestIdx = 0;
             let lowestVal = Infinity;
-            for (let i = 0; i < 6; i++) {
-                const pk = allFeetLocal[i];
-                const worldY = bodyY + pk.x * Math.sin(bodyRoll) + pk.y * Math.cos(bodyRoll);
-                if (worldY < lowestVal) {
-                    lowestVal = worldY;
-                    lowestIdx = i;
+            for (let k = 0; k < 6; k++) {
+                const yw = footWorldY(allFeetLocal[k], bodyRoll, bodyY);
+                if (yw < lowestVal) {
+                    lowestVal = yw;
+                    lowestIdx = k;
                 }
             }
-            groundedIndices = [lowestIdx];
+            groundedIndices.push(lowestIdx);
         }
+
+        lastGroundedIndices = groundedIndices;
 
         // 3. 物理動力學位移積分：根據靜力平衡分配的法向力 (正常重力分量)，加權累加各觸地腳的位移，計算最真實的無打滑機身位移
         if (groundedIndices.length > 0) {
@@ -696,8 +727,6 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 
             prevFeetLocal = allFeetLocal.map(f => ({ x: f.x, y: f.y }));
             prevBodyRoll = bodyRoll;
-        } else {
-            prevFeetLocal = null;
         }
 
         // 計算本幀的水平位移量 (像素)
@@ -859,13 +888,12 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         // 繪製快取畫布至螢幕
         ctx.drawImage(robotCanvas, 0, 0);
 
-        // --- 高亮著地足 (當前最底部的腳掌在世界座標 y < 0.1) ---
+        // --- 高亮著地足 (依據物理判定 lastGroundedIndices) ---
         if (overlayAlpha > 0.01) {
             ctx.save();
             ctx.globalAlpha = overlayAlpha;
             for (let i = 0; i < 6; i++) {
-                const f_world = allFeetWorld[i];
-                if (f_world.y < 0.1) {
+                if (lastGroundedIndices.includes(i)) {
                     const f_local = allFeetLocal[i];
                     drawPoint(f_local, '#ef4444', 5, ctx);
                     const mp = mapCoords(f_local);
@@ -876,6 +904,114 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
                     ctx.stroke();
                 }
             }
+
+            // --- 繪製重心 (COM) 與支撐分析指示器 ---
+            // 重心在機身局部坐標系中位於 (0, -bodyYOffset)
+            const comLocal = { x: 0, y: -bodyYOffset };
+            const m_com = mapCoords(comLocal);
+
+            // 決定線條顏色 (若有合法兩點支撐，畫綠色；若退化為單點，畫紅色)
+            const isSinglePoint = (validLines.length === 0);
+            const indicatorColor = isSinglePoint ? '#ef4444' : '#10b981';
+
+            // 畫投影虛線到地面 (targetGy)
+            ctx.beginPath();
+            ctx.setLineDash([4, 4]);
+            ctx.moveTo(m_com.x, m_com.y);
+            ctx.lineTo(m_com.x, targetGy);
+            ctx.strokeStyle = indicatorColor;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 在地面上標示投影點
+            ctx.beginPath();
+            ctx.arc(m_com.x, targetGy, 4, 0, Math.PI * 2);
+            ctx.fillStyle = indicatorColor;
+            ctx.fill();
+
+            // 畫 COM 符號 (黃黑相間)
+            const comRadius = 8;
+            ctx.save();
+            ctx.translate(m_com.x, m_com.y);
+            ctx.beginPath();
+            ctx.arc(0, 0, comRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            for (let i = 0; i < 4; i++) {
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, comRadius, i * Math.PI / 2, (i + 1) * Math.PI / 2);
+                ctx.closePath();
+                ctx.fillStyle = (i === 0 || i === 2) ? '#facc15' : '#0f172a';
+                ctx.fill();
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // 標註 COM 文字
+            ctx.fillStyle = '#0f172a';
+            ctx.font = 'bold 11px system-ui';
+            ctx.textAlign = 'center';
+            ctx.fillText('COM', m_com.x, m_com.y - 12);
+
+            // 繪製支撐區間 (Support Range / Base) 幾何指示
+            if (isGroundLineValid && groundLine) {
+                const mp1 = mapCoords(groundLine.p1);
+                const mp2 = mapCoords(groundLine.p2);
+                const minX = Math.min(mp1.x, mp2.x);
+                const maxX = Math.max(mp1.x, mp2.x);
+
+                // 在地面上畫出綠色支撐線段
+                ctx.beginPath();
+                ctx.moveTo(minX, targetGy);
+                ctx.lineTo(maxX, targetGy);
+                ctx.strokeStyle = '#10b981';
+                ctx.lineWidth = 6;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // 標示 "Support Base" 文字
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 11px system-ui';
+                ctx.textAlign = 'center';
+                const midX = (minX + maxX) / 2;
+                ctx.fillText('支撐區間 (包含 COM)', midX, targetGy + 15);
+            } else {
+                // 單點支撐狀態：畫出被排除的兩點線 (invalidCOMLines)
+                invalidCOMLines.forEach((line) => {
+                    const mp1 = mapCoords(line.p1);
+                    const mp2 = mapCoords(line.p2);
+
+                    // 畫紅色虛線段，表示被排除的支撐區間
+                    ctx.beginPath();
+                    ctx.moveTo(mp1.x, targetGy);
+                    ctx.lineTo(mp2.x, targetGy);
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+
+                    // 在地面投影端點畫小紅點
+                    ctx.beginPath();
+                    ctx.arc(mp1.x, targetGy, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ef4444';
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(mp2.x, targetGy, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ef4444';
+                    ctx.fill();
+                });
+
+                // 指示為什麼是單點支撐的警示文字
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 11px system-ui';
+                ctx.textAlign = 'center';
+                ctx.fillText('重心未落在任何兩點支撐區間內！', m_com.x, targetGy + 15);
+                ctx.font = '10px system-ui';
+                ctx.fillText('-> 強制退化為單點支撐 (幾何最低點)', m_com.x, targetGy + 28);
+            }
+
             ctx.restore();
         }
 
@@ -886,24 +1022,34 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         ctx.fillText('幾何約束衝突！請嘗試減小曲柄半徑。', canvas.width / 2, canvas.height / 2);
     }
 
-    // 8. 繪製統計數據面板 (僅在管理員模式下顯示)
-    if (overlayAlpha > 0.01) {
-        ctx.save();
-        ctx.globalAlpha = overlayAlpha;
-        drawOverlayStats();
-        ctx.restore();
-    }
+        // 8. 繪製統計數據面板 (僅在管理員模式下顯示)
+        if (overlayAlpha > 0.01) {
+            ctx.save();
+            ctx.globalAlpha = overlayAlpha;
+            drawOverlayStats();
+            ctx.restore();
+        }
 
-    // 紀錄數據用於 AI 診斷
-    if (typeof recordAnalyticsData === 'function') {
-        recordAnalyticsData();
+        // 紀錄數據用於 AI 診斷
+        if (typeof recordAnalyticsData === 'function') {
+            recordAnalyticsData();
+        }
+    } catch (err) {
+        console.error("Render error in hexapod sim:", err);
+        ctx.save();
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 16px system-ui';
+        ctx.fillText("Render Error: " + err.message, 20, 40);
+        ctx.restore();
+    } finally {
+        ctx.globalAlpha = 1.0;
     }
 }
 
 
 function drawOverlayStats() {
     const w = 260;
-    const h = 135;
+    const h = 230;
     const x = canvas.width - w - 20;
     const y = 20;
 
@@ -944,11 +1090,51 @@ function drawOverlayStats() {
     drawRow('前次腳步推進:', `${displayDist.toFixed(1)} mm`, '#38bdf8', y + 68);
     drawRow('前次腳步均速:', `${displaySpeed.toFixed(1)} mm/s`, '#34d399', y + 93);
     drawRow('當前移動速度:', `${smoothedSpeed.toFixed(1)} mm/s`, '#facc15', y + 118);
+    drawRow('地面支撐狀態:', isGroundLineValid ? '雙點支撐' : '單點支撐 (無效)', isGroundLineValid ? '#10b981' : '#ef4444', y + 143);
+
+    // 5. Grounded Foot Indicators
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 13px system-ui';
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillText('觸地狀態 (綠:觸地/灰:懸空)', x + 20, y + 167);
+
+    const startY = y + 187;
+    const startY2 = y + 207;
+
+    const drawIndicator = (idx, label, px, py) => {
+        const isGrounded = lastGroundedIndices.includes(idx);
+        ctx.beginPath();
+        ctx.arc(px, py, 7, 0, Math.PI * 2);
+        ctx.fillStyle = isGrounded ? '#10b981' : '#475569';
+        ctx.fill();
+
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 9px system-ui';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(label, px, py + 3);
+    };
+
+    ctx.textAlign = 'left';
+    ctx.font = '11px system-ui';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('遠端 Far', x + 20, startY + 3);
+    drawIndicator(3, 'F', x + 100, startY);
+    drawIndicator(4, 'M', x + 140, startY);
+    drawIndicator(5, 'R', x + 180, startY);
+
+    ctx.textAlign = 'left';
+    ctx.font = '11px system-ui';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('近端 Near', x + 20, startY2 + 3);
+    drawIndicator(0, 'F', x + 100, startY2);
+    drawIndicator(1, 'M', x + 140, startY2);
+    drawIndicator(2, 'R', x + 180, startY2);
 }
 
 function animate() {
     let now = performance.now();
     let dt = (now - lastFrameTime) / 1000;
+    dt = Math.min(0.03, dt); // 限制單幀最大物理步長，防後台切換爆炸
     lastFrameTime = now;
 
     if (isPlaying) {
@@ -1003,7 +1189,8 @@ function animate() {
 
     renderFrame(theta, isPlaying, dt);
 
-    if (isPlaying || (isAdminMode && overlayAlpha < 1) || (!isAdminMode && overlayAlpha > 0)) {
+    const isSettled = !isPlaying && Math.abs(bodyRollVel) < 1e-4 && Math.abs(targetRoll - bodyRoll) < 1e-4;
+    if (isPlaying || !isSettled || (isAdminMode && overlayAlpha < 1) || (!isAdminMode && overlayAlpha > 0)) {
         isLooping = true;
         requestAnimationFrame(animate);
     } else {
@@ -1082,27 +1269,33 @@ document.getElementById('speedSlider').addEventListener('input', (e) => {
     gravityScale = 1.0 + (speedMagnitude * 5);
 });
 
-// --- Hidden Admin Trigger (Triple-click on Battery label) ---
+// --- Hidden Admin Trigger (Triple-click on "觀察中" in AI chat box) ---
 let clickCount = 0;
 let lastClickTime = 0;
-document.getElementById('speedVal').addEventListener('click', () => {
-    const now = Date.now();
-    if (now - lastClickTime < 600) {
-        clickCount++;
-    } else {
-        clickCount = 1;
-    }
-    lastClickTime = now;
+const aiStatusEl = document.querySelector('.ai-status');
+if (aiStatusEl) {
+    aiStatusEl.style.cursor = 'pointer'; // Ensure cursor feedback on hover
+    aiStatusEl.addEventListener('click', () => {
+        const now = Date.now();
+        if (now - lastClickTime < 600) {
+            clickCount++;
+        } else {
+            clickCount = 1;
+        }
+        lastClickTime = now;
 
-    if (clickCount >= 3) {
-        isAdminMode = !isAdminMode;
-        const panel = document.querySelector('.control-panel');
-        panel.classList.toggle('admin-mode', isAdminMode);
-        console.log("Admin Authority: " + (isAdminMode ? "Enabled" : "Disabled"));
-        clickCount = 0; // Reset
-        triggerUpdate(); // Refresh to show/hide overlay
-    }
-});
+        if (clickCount >= 3) {
+            isAdminMode = !isAdminMode;
+            const panel = document.querySelector('.control-panel');
+            if (panel) {
+                panel.classList.toggle('admin-mode', isAdminMode);
+            }
+            console.log("Admin Authority: " + (isAdminMode ? "Enabled" : "Disabled"));
+            clickCount = 0; // Reset
+            triggerUpdate(); // Refresh to show/hide overlay
+        }
+    });
+}
 
 document.getElementById('hopStrengthSlider').addEventListener('input', (e) => {
     hopStrength = parseFloat(e.target.value);

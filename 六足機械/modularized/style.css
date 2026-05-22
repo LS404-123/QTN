@@ -103,17 +103,14 @@ header h2 {
 
 
 /* Admin Section Logic */
-#adminSection,
+#adminSection {
+    display: block;
+    grid-column: 1 / span 2;
+}
+
 .admin-only {
     display: none;
 }
-
-.admin-mode #adminSection {
-    display: block;
-    grid-column: 1 / span 2;
-    animation: slideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
 
 .admin-mode .admin-only {
     display: inline-block;

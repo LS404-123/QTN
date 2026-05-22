@@ -190,6 +190,8 @@ let bodyRollVel = 0;
 const y_ground = 0; // 固定地面世界座標
 let lockedPivotIndex = -1; // 鎖定的水平推進支點 (-1 表示未鎖定)
 let pivotWorldX = 0; // 支點在世界坐標系中的固定位置
+let prevBodyRoll = 0; // 追蹤上一幀的機身傾角
+let prevFeetLocal = null; // 追蹤上一幀的所有腳掌相對於機身的坐標
 
 // 統計與診斷相關變數（保留聲明以防止其他模組報錯）
 let displayDist = 0;
@@ -476,6 +478,75 @@ function drawFootShadow(footLocal) {
 }
 
 /**
+ * 基於二維靜力平衡 (力與力矩平衡) 計算每個觸地腳掌分配到的法向力權重
+ */
+function computeNormalForces(groundedIndices, allFeetLocal, roll) {
+    const cosR = Math.cos(roll);
+    const sinR = Math.sin(roll);
+    
+    // 1. 計算每個觸地腳相對於機身中心的水平位移 d_i
+    let feet = groundedIndices.map(idx => {
+        const f = allFeetLocal[idx];
+        const d = f.x * cosR - f.y * sinR;
+        return { idx, d, w: 0 };
+    });
+    
+    // 2. 作用力集方法 (Active Set Method) 求解非負最小二乘權重 (確保 w_i >= 0 且 sum(w_i d_i) = 0)
+    let active = [...feet];
+    while (active.length > 0) {
+        const N = active.length;
+        if (N === 1) {
+            active[0].w = 1.0;
+            break;
+        }
+        
+        let S1 = 0, S2 = 0;
+        for (let f of active) {
+            S1 += f.d;
+            S2 += f.d * f.d;
+        }
+        
+        const denom = S1 * S1 - N * S2;
+        if (Math.abs(denom) < 1e-5) {
+            for (let f of active) f.w = 1.0 / N;
+            break;
+        }
+        
+        let hasNegative = false;
+        for (let f of active) {
+            f.w = (S1 * f.d - S2) / denom;
+            if (f.w < -1e-5) {
+                hasNegative = true;
+            }
+        }
+        
+        if (!hasNegative) {
+            break; 
+        }
+        
+        // 排序並移除最負的那個權重腳掌重新計算
+        active.sort((a, b) => a.w - b.w);
+        active.shift(); 
+    }
+    
+    // 3. 回填並歸一化
+    let weights = {};
+    let sum = 0;
+    for (let f of feet) {
+        weights[f.idx] = Math.max(0, f.w);
+        sum += weights[f.idx];
+    }
+    
+    if (sum > 1e-5) {
+        for (let idx of groundedIndices) weights[idx] /= sum;
+    } else {
+        for (let idx of groundedIndices) weights[idx] = 1.0 / groundedIndices.length;
+    }
+    
+    return weights;
+}
+
+/**
  * Main Render and Physics Logic Loop
  */
 function renderFrame(currentTheta, recordPath, dt = 0.016) {
@@ -507,8 +578,8 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
                 // 為了數值穩定，兩隻腳在 x 軸上的距離不能太近
                 if (Math.abs(p1.x - p2.x) < 5.0) continue;
 
-                // 求解使這兩腳剛好切齊地面的 bodyRoll
-                const roll = Math.atan2(p2.y - p1.y, p1.x - p2.x);
+                // 求解使這兩腳剛好切齊地面的 bodyRoll (使用 Math.atan 確保傾角在 -90 到 90 度範圍內)
+                const roll = Math.atan((p2.y - p1.y) / (p1.x - p2.x));
                 
                 // 求解對應的機身高度 bodyY
                 const tempY = -(p1.x * Math.sin(roll) + p1.y * Math.cos(roll));
@@ -536,44 +607,97 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             }
         }
 
-        // 如果沒有找到合法的兩腳組合（極端情況），退化為單足最高點支撐，保持水平
-        if (bestPair === null) {
-            bestRoll = 0;
-            bestY = -Math.min(...allFeetLocal.map(f => f.y));
-        }
+        let groundedIndices = [];
 
-        // 套用求得的高度與傾角
-        bodyY = bestY;
-        bodyRoll = bestRoll;
+        // Spring-damper 參數 (可調整手感)
+        const rollStiffness = 400; // rad/s²  越大越快跟上目標角度
+        const rollDamping   = 30;  // /s       越大越快停止振盪
 
-        // 3. 幾何水平推進求解 (Kinematic Propulsion)
-        // 直接使用剛剛求得的精確支撐腳作為著地腳
-        const groundedIndices = bestPair !== null ? bestPair : [];
+        if (bestPair !== null) {
+            // Spring-damper：讓 bodyRoll 平滑趨向幾何目標角 bestRoll，而非瞬間跳躍
+            const rollErr = bestRoll - bodyRoll;
+            bodyRollVel += rollErr * rollStiffness * dt;
+            bodyRollVel -= bodyRollVel * rollDamping * dt;
+            bodyRoll += bodyRollVel * dt;
 
-        // 如果當前鎖定的支點已經離地，則切換支點
-        if (groundedIndices.length > 0 && !groundedIndices.includes(lockedPivotIndex)) {
-            // 選擇一個新的支點，優先選最靠近中心的腳 (x' 接近 0 的中足)
-            let bestPivot = groundedIndices[0];
-            let minAbsX = Math.abs(allFeetLocal[bestPivot].x);
-            for (let idx of groundedIndices) {
-                if (Math.abs(allFeetLocal[idx].x) < minAbsX) {
-                    minAbsX = Math.abs(allFeetLocal[idx].x);
-                    bestPivot = idx;
+            // 從當前 bodyRoll (非目標) 重新計算 bodyY，使最低的支撐腳切齊地面
+            // 取兩腳所需高度的最大值，確保任一腳都不穿地
+            const p1 = allFeetLocal[bestPair[0]];
+            const p2 = allFeetLocal[bestPair[1]];
+            const y1 = -(p1.x * Math.sin(bodyRoll) + p1.y * Math.cos(bodyRoll));
+            const y2 = -(p2.x * Math.sin(bodyRoll) + p2.y * Math.cos(bodyRoll));
+            bodyY = Math.max(y1, y2);
+
+            groundedIndices = bestPair;
+        } else {
+            // 單腳支撐：Spring 回水平（目標 roll = 0）
+            const rollErr = 0 - bodyRoll;
+            bodyRollVel += rollErr * rollStiffness * dt;
+            bodyRollVel -= bodyRollVel * rollDamping * dt;
+            bodyRoll += bodyRollVel * dt;
+
+            // 設定高度，使最低的腳剛好切齊地面 y = 0
+            bodyY = -Math.min(...allFeetLocal.map(f => f.x * Math.sin(bodyRoll) + f.y * Math.cos(bodyRoll)));
+
+            // 找出此時最低（在世界座標中）的腳掌作為觸地腳
+            let lowestIdx = 0;
+            let lowestVal = Infinity;
+            for (let i = 0; i < 6; i++) {
+                const pk = allFeetLocal[i];
+                const worldY = bodyY + pk.x * Math.sin(bodyRoll) + pk.y * Math.cos(bodyRoll);
+                if (worldY < lowestVal) {
+                    lowestVal = worldY;
+                    lowestIdx = i;
                 }
             }
-            lockedPivotIndex = bestPivot;
-            
-            // 記錄該支點當前在世界座標系的水平位置
-            const px = allFeetLocal[lockedPivotIndex].x;
-            const py = allFeetLocal[lockedPivotIndex].y;
-            pivotWorldX = bodyX + px * Math.cos(bodyRoll) - py * Math.sin(bodyRoll);
+            groundedIndices = [lowestIdx];
         }
 
-        // 根據鎖定的支點，反推機身的水平位置 bodyX，確保支點不打滑
-        if (lockedPivotIndex !== -1) {
-            const px = allFeetLocal[lockedPivotIndex].x;
-            const py = allFeetLocal[lockedPivotIndex].y;
-            bodyX = pivotWorldX - (px * Math.cos(bodyRoll) - py * Math.sin(bodyRoll));
+        // 3. 物理動力學位移積分：根據靜力平衡分配的法向力 (正常重力分量)，加權累加各觸地腳的位移，計算最真實的無打滑機身位移
+        if (groundedIndices.length > 0) {
+            if (prevFeetLocal === null) {
+                prevFeetLocal = allFeetLocal.map(f => ({ x: f.x, y: f.y }));
+                prevBodyRoll = bodyRoll;
+                lockedPivotIndex = groundedIndices[0];
+            }
+
+            const weights = computeNormalForces(groundedIndices, allFeetLocal, bodyRoll);
+
+            // 視覺高亮顯示：選擇當前承受法向力最大 (重量分配最多) 的腳掌作為主支點
+            let maxWeightIdx = groundedIndices[0];
+            let maxWeight = -1;
+            for (let idx of groundedIndices) {
+                if (weights[idx] > maxWeight) {
+                    maxWeight = weights[idx];
+                    maxWeightIdx = idx;
+                }
+            }
+            lockedPivotIndex = maxWeightIdx;
+
+            // 機身水平位移積分
+            let deltaBodyX = 0;
+            const cosR = Math.cos(bodyRoll);
+            const sinR = Math.sin(bodyRoll);
+            const cosRPrev = Math.cos(prevBodyRoll);
+            const sinRPrev = Math.sin(prevBodyRoll);
+
+            for (let idx of groundedIndices) {
+                const f = allFeetLocal[idx];
+                const fPrev = prevFeetLocal[idx];
+
+                // 腳掌在世界坐標的相對水平坐標 x'
+                const x_curr = f.x * cosR - f.y * sinR;
+                const x_prev = fPrev.x * cosRPrev - fPrev.y * sinRPrev;
+
+                deltaBodyX -= weights[idx] * (x_curr - x_prev);
+            }
+
+            bodyX = prevBodyX + deltaBodyX;
+
+            prevFeetLocal = allFeetLocal.map(f => ({ x: f.x, y: f.y }));
+            prevBodyRoll = bodyRoll;
+        } else {
+            prevFeetLocal = null;
         }
 
         // 計算本幀的水平位移量 (像素)
@@ -901,6 +1025,7 @@ function triggerUpdate() {
     if (!isLooping) {
         lastFrameTime = performance.now(); // Reset time to avoid large jumps when unpausing
         prevBodyX = bodyX; // 同步 prevBodyX 避免暫停後恢復播放時背景瞬間跳變！
+        bodyRollVel = 0; // 重置動力學角速度避免速度累積
         animate();
     }
 }
@@ -1011,6 +1136,7 @@ document.getElementById('phaseSlider').addEventListener('input', (e) => {
     phaseDiff = (deg / 180) * Math.PI;
     document.getElementById('phaseVal').innerText = deg + '°';
     paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
+    prevFeetLocal = null;
     triggerUpdate();
 });
 
@@ -1020,6 +1146,7 @@ const setupSlider = (id, valId, callback) => {
         document.getElementById(valId).innerText = val;
         callback(val * globalScale); // Apply globalScale here
         paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
+        prevFeetLocal = null;
         triggerUpdate();
     });
 };
@@ -1101,6 +1228,8 @@ function resetParameters() {
     bodyRollVel = 0;
     lockedPivotIndex = -1;
     pivotWorldX = 0;
+    prevBodyRoll = 0;
+    prevFeetLocal = null;
     lastCycleX = 0;
     cycleAvgSpeed = 0;
     smoothedSpeed = 0;

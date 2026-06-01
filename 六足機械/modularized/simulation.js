@@ -179,7 +179,7 @@ const AdminController = {
     isActive: false,
     overlayAlpha: 0,
     fadeSpeed: 0.05,
-    
+
     toggle() {
         this.isActive = !this.isActive;
         const panel = document.querySelector('.control-panel');
@@ -188,7 +188,7 @@ const AdminController = {
         }
         console.log("Admin Authority: " + (this.isActive ? "Enabled" : "Disabled"));
     },
-    
+
     updateFade() {
         if (this.isActive) {
             this.overlayAlpha = Math.min(1, this.overlayAlpha + this.fadeSpeed);
@@ -196,13 +196,13 @@ const AdminController = {
             this.overlayAlpha = Math.max(0, this.overlayAlpha - this.fadeSpeed);
         }
     },
-    
+
     isAnimating(isPlaying, isSettled) {
-        return isPlaying || !isSettled || 
-               (this.isActive && this.overlayAlpha < 1) || 
-               (!this.isActive && this.overlayAlpha > 0);
+        return isPlaying || !isSettled ||
+            (this.isActive && this.overlayAlpha < 1) ||
+            (!this.isActive && this.overlayAlpha > 0);
     },
-    
+
     getStrokeColor() {
         return this.isActive ? '#000000' : 'transparent';
     }
@@ -1289,7 +1289,7 @@ function drawOverlayStats() {
 
     // 只顯示最穩定且具備比較價值的「週期平均速度」
     // 這個數值代表機器人每走完完整一步的真實平均推進能力，不會隨步伐抖動，最適合用來比較不同連桿長度的效能
-    drawRow('每圈前進速度:', `${displayDist.toFixed(1)} mm`, '#38bdf8', y + 68);
+    drawRow('每圈前進距離:', `${displayDist.toFixed(1)} mm`, '#38bdf8', y + 68);
     drawRow('每秒前進速度:', `${displaySpeed.toFixed(1)} mm/s`, '#34d399', y + 93);
     drawRow('地面支撐狀態:', isStableSupport ? '穩定支撐' : '失去平衡', isStableSupport ? '#10b981' : '#ef4444', y + 118);
 

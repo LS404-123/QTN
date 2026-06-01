@@ -1,72 +1,120 @@
-# 六足機器人模擬器：物理與程式運作流程解析
-(Hexapod Simulator: Physics and Execution Flow)
+# 六足機器人模擬器：物理與程式運作核心細節完全解析
+(Hexapod Simulator: Full In-Depth Physics and Execution Flow)
 
-本文件詳細說明了 `simulation.js` 中的運作流程，以及程式碼中的各個變數是如何對應到真實世界中的物理現象。
-
-## 1. 模擬器每幀運作流程 (Frame-by-Frame Execution Flow)
-
-模擬器在每一幀（Frame）的執行主要分為以下幾個步驟（對應程式碼中的 `renderFrame` 迴圈）：
-
-1. **純幾何運動學計算 (Kinematic Geometry Update)**
-   - 根據當前的主軸角度 `currentTheta`，透過 `getLegPositions` 計算出兩側（近側與遠側，有 180 度相位差）共六隻腳的理想空間幾何位置。
-   - 此時的計算完全不考慮重力或地面，僅依賴曲柄連桿的絕對剛體幾何特性。
-
-2. **尋找地面支撐點與姿態目標 (Ground Contact & Posture Target)**
-   - 模擬器會將這六隻腳的底端視為點集合，並尋找其下邊緣的「凸包（Convex Hull）切線」。
-   - 只要找到能穩定包容機身重心投影的切線（兩腳或多腳連線），這條線就代表「真實世界中的物理地面」。
-   - 由這條線的斜率，反推出機器人此時「應該要有的傾角」（`targetRoll`）。
-
-3. **姿態動力學更新 (Posture Dynamics)**
-   - 機身並不會瞬間硬梆梆地貼平目標傾角，而是透過一個角速度變數 `bodyRollVel` 來進行逼近。
-   - 利用 `bodyRoll += bodyRollVel * dt` 進行數值積分，產生平滑的機身俯仰（Pitching / Rocking）動作。
-
-4. **觸地判定與正向力分配 (Ground Detection & Normal Force)**
-   - 當機身傾角確定後，虛擬引擎會將機身向下平移，直到最低的一隻（或多隻）腳剛好觸碰到地面高度 `y_ground`。
-   - 在極小容差 `CONTACT_TOL` 範圍內的腳會被標記為「觸地 (`isGrounded = true`)」。
-   - 透過 `computeNormalForces`，根據重心在各觸地腳之間的 X 座標比例，將機身的重量（正向力 $F_N$）力矩平衡分配給所有觸地的腳。
-
-5. **彈性足端與摩擦力計算 (Elastic Foot & Friction Physics)**
-   - 對於每一隻觸地的腳，計算它相對於地面的「打滑位移（`slipDistance`）」與「瞬時滑動速度」。
-   - 將這些數值代入彈簧阻尼模型，計算出每一隻腳與地面產生的水平剪切力（$F_x$）。
-   - 將 $F_x$ 與最大靜摩擦力（$F_{max} = \mu F_N$）比較，若超過極限則判定為真實打滑（Skid），此時腳步將被迫在地面上拖行。
-
-6. **機身平移積分 (Body Translation Integration)**
-   - 將所有腳產生的推進力（正向）與拖曳阻力（負向）加總為淨推力 `totalForceX`。
-   - 透過牛頓第二運動定律 $F = ma$，計算出機身加速度，並對速度 `bodyVelX` 與絕對位置 `bodyX` 進行數值積分（Explicit Euler Integration）。
-   - 最後將位移量傳給背景控制器（Background Scroller）產生相對視覺移動。
+本文件詳細且深度剖析 `simulation.js` 中的運作演算法與物理機制，列出程式碼中的變數、公式以及其對應到真實世界現象的嚴謹解釋。
 
 ---
 
-## 2. 程式碼與真實世界物理的對應 (Code to Real-World Physics Mapping)
+## 1. 模擬器每幀運作流程與演算法細節 (Algorithmic Execution Flow)
 
-本模擬器並沒有使用 Box2D、Matter.js 等現成的剛體物理引擎，而是針對六足步態機器人的微觀特性，客製化了一套**彈性摩擦力模型（Penalty-based Friction Model）**。以下是程式碼變數與現實物理現象的對應：
+模擬器在每一幀（Frame）的執行主要分為以下幾個步驟（對應程式碼中的 `renderFrame` 迴圈）：
+
+### 1.1 純幾何運動學計算 (Kinematic Geometry Update)
+- **概念**：模擬器不使用動力學約束求解器，而是基於仿生機構（如仿 Strandbeest 的 Klann/Jansen Linkage，或自定義的曲柄連桿機構）進行顯式幾何展開。
+- **演算法細節 (`getLegPositions`)**：
+  - 根據當前的主軸角度 `currentTheta`，計算曲柄的座標 $(x_c, y_c)$。
+  - 使用兩圓交點函數 `getIntersection(C1, r1, C2, r2)`，依照連桿的恆定長度（剛體假設），依序求出關節 A、B、C 點的座標。
+  - 最終推導出足端（Foot Point）的局部座標 $(x, y)$。這會同時對兩側（近側與遠側，有 180 度 `phaseDiff` 相位差）的六隻腳進行計算。
+  - 此時的計算**完全不考慮重力或地面**，僅依賴馬達強行驅動曲柄的剛性幾何特性。
+
+### 1.2 尋找地面支撐點與姿態目標 (Ground Contact & Convex Hull)
+- **概念**：由於機身是自由落體狀態，真正的地面高度相對機身是不斷變化的。
+- **演算法細節**：
+  - 將這六隻腳的底端視為二維平面上的點集合，尋找其下邊緣的「凸包（Convex Hull）切線」。
+  - 程式會嘗試連接任意兩隻腳，計算這條連線的斜率。若這條線能將所有其餘的腳都包容在它的上方，且機身重心（X=0）落在這兩隻腳之間，則這條線就是最穩定的物理支撐面（真實世界中的地面）。
+  - 由這條線的幾何斜率，反推出機器人「應該要有的理想目標傾角」（`targetRoll`）。
+
+### 1.3 姿態動力學更新 (Posture Dynamics & Torsional Damping)
+- **概念**：機身並不會瞬間貼平目標傾角，這會違反物理。機體會依賴內部結構柔性與重力產生平滑的旋轉。
+- **演算法細節**：
+  - 計算角度誤差：`rollErr = targetRoll - bodyRoll`
+  - 使用一個旋轉彈簧阻尼模型來更新角速度：
+    `bodyRollVel += (rollErr * rollStiffness + torque - bodyRollVel * DampingFactor) * dt`
+  - 使用顯式尤拉法（Explicit Euler Integration）更新實際傾角：
+    `bodyRoll += bodyRollVel * dt`
+  - 這樣能確保步伐切換時，重心轉移會帶有慣性與搖晃感，而非生硬的瞬間跳變。
+
+### 1.4 觸地判定與正向力分配 (Ground Detection & Normal Force)
+- **概念**：當機身傾角確定後，系統會將機身垂直下移，直到足端碰到地面 $y = y_{ground}$。
+- **演算法細節 (`computeNormalForces`)**：
+  - 在極小容差 `CONTACT_TOL` (0.2) 範圍內的腳會被標記為觸地。
+  - **力矩平衡計算**：觸地腳在地面上的投影座標 $d = x \cos(R) - y \sin(R)$。
+  - 將最左側與最右側的腳視為支點，依照重心 ($d=0$) 到支點的距離比例，利用槓桿原理分配重力：
+    - $w_L = \frac{d_R}{d_R - d_L}$ （重心越靠近左邊，左邊受力越大）
+    - $w_R = \frac{-d_L}{d_R - d_L}$
+  - 為了防止打滑失真，程式設定了 `minWeight = 0.15`，確保中間落地的腳依然能分攤到部分正向力（$F_N$），其餘剩餘重量再依力矩比例分配。
+
+### 1.5 彈性足端與摩擦力計算 (Elastic Foot & Friction Physics)
+- **概念**：客製化的「彈性摩擦力模型（Penalty-based Friction Model）」。
+- **演算法細節**：
+  - 對於觸地腳，計算相對於地面的「打滑位移（`slipDistance`）」：當腳試圖穿透或在地面滑動時，會被虛擬彈簧拉住。
+  - 計算瞬時滑動速度：`slip_vel = dx_slip / dt`。
+  - 計算推力（彈力加阻尼力）：$F_x = (K \cdot slip) + (C \cdot slip\_vel)$。
+  - 計算極限靜摩擦力：$F_{max} = \mu \cdot F_N$（使用庫倫乾摩擦定律）。
+  - 若 $F_x > F_{max}$，推力被截斷為 $F_{max}$，並將腳強制拉回極限距離，發生真實物理打滑（Skid）。
+
+### 1.6 機身平移積分 (Body Translation Integration)
+- **概念**：根據所有腳提供的淨推力，移動機身。
+- **演算法細節**：
+  - 將所有觸地腳的推力加總：$\Sigma F_x = totalForceX$。
+  - 計算加速度：$a = \Sigma F_x / m$。
+  - 積分速度與位置：
+    `bodyVelX += a * dt`
+    `bodyX += bodyVelX * dt`
+  - 如果遭遇騰空狀態（無腳觸地），機器人會因為殘留的 `bodyVelX` 繼續向前滑行，完美保留實體動能。
+
+---
+
+## 2. 核心參數與真實世界物理特性的深度對應
 
 ### A. 腳掌彈性與變形 (Rubber Foot Elasticity)
-* **對應真實物理：** 虎克定律（Hooke's Law） $F = -K \Delta x$
-* **程式碼參數：** `footStiffness` (30 N/mm), `state.slipDistance`
-* **說明：** 
-  在真實世界中，當橡膠腳墊接觸地面並被機器人往後拉時，橡膠會先發生肉眼難見的「剪切形變（Shear Deformation）」而不是立刻打滑。程式中的 `slipDistance` 記錄的就是這個形變拉伸量。`footStiffness` 則代表橡膠的剛度。當腳在地上拖行時，其實是在拉扯一根隱形的彈簧，這根彈簧儲存的張力就是推動機器人前進的核心動力。
+* **數學模型**：虎克定律（Hooke's Law） $F = -K \Delta x$
+* **核心參數**：`footStiffness` (30 N/mm), `slipDistance`
+* **深度說明**： 
+  在微觀物理中，沒有絕對剛性的接觸。當橡膠腳墊接觸地面並被機器人往後拉時，橡膠會發生「剪切形變（Shear Deformation）」並儲存應變能。`slipDistance` 就是記錄腳趾頭黏在地面上被扯遠的拉伸量。`footStiffness` 是這根隱形彈簧的剛度。這些被拉伸的橡膠分子企圖縮回的張力，就是推動機身前進的推力。
 
 ### B. 能量耗散與阻尼 (Energy Dissipation & Damping)
-* **對應真實物理：** 黏滯阻尼（Viscous Damping） $F = -C v$
-* **程式碼參數：** `footDamping` (0.4 N/(mm/s)), `slip_vel_real_mm`
-* **說明：** 
-  彈簧本身不會消耗能量，如果只有彈簧，機器人前進時會發生劇烈的前後共振。真實的橡膠與機械關節中存在著內摩擦與阻尼效應，能將震動的動能轉換為熱能消散。程式中的 `footDamping` 正是為了吸收多餘的高頻震盪，避免顯式積分的數值不穩定（Numerical Instability），確保推力的輸出是平滑線性的。
+* **數學模型**：黏滯阻尼（Viscous Damping） $F = -C v$
+* **核心參數**：`footDamping` (0.4 N/(mm/s)), `slip_vel_real_mm`
+* **深度說明**： 
+  單純的彈簧系統是無損的（Lossless），會導致機器人踩地時瘋狂高頻震盪。現實中的橡膠與關節材料具有內摩擦（Internal Friction）。阻尼 `footDamping` 與足端的瞬間打滑速度成正比，它會產生反向抵抗力，將震盪的動能轉換為熱能消散，防止數值積分不穩定（Numerical Explosion），使動力輸出極度線性平滑。
 
-### C. 庫倫乾摩擦模型 (Coulomb Dry Friction)
-* **對應真實物理：** 靜摩擦與動摩擦力極限 $F_{max} = \mu F_N$
-* **程式碼參數：** `frictionCoeff` (0.8), `F_N`, `state.F_max`
-* **說明：** 
-  不論足尖橡膠拉得多長，它能提供的推力是有物理極限的。這個極限取決於這隻腳分攤到了多少機器人的重量（`F_N`）以及地面的粗糙程度（`frictionCoeff`）。當彈簧拉力超過這個極限時，程式會將出力強制截斷在 `F_max`，此時腳掌就會開始在地面上發生不可逆的真實滑動（打滑，紀錄於 `state.skid`）。
+### C. 庫倫乾摩擦極限 (Coulomb Dry Friction Limit)
+* **數學模型**：$F \le \mu F_N$
+* **核心參數**：`frictionCoeff` (0.8), `weights[idx]` (即 $F_N$ 比例), `F_max`
+* **深度說明**： 
+  依據 Amontons-Coulomb 摩擦力定律，靜摩擦力的極限完全取決於正向下壓力 $F_N$。當某隻腳位於邊緣，分攤到了 80% 的機身重量時，它能承受非常大的彈簧拉力而不打滑；反之，若某隻腳只輕觸地面（分攤 15% 重量），其 $F_{max}$ 極低，稍微被拉扯就會突破極限而在地上摩擦滑行（Skid）。這解釋了為何步伐過大時機器人會原地空轉。
 
-### D. 懸吊與柔性平衡 (Suspension & Balance)
-* **對應真實物理：** 扭轉彈簧與旋轉阻尼阻力 $\tau = I \alpha$
-* **程式碼參數：** `targetRoll`, `bodyRollVel`, `rollStiffness`
-* **說明：** 
-  機身姿態不會像幾何線條一樣瞬間改變。程式使用了一個隱形的扭轉阻尼系統（`rollStiffness`），試圖將機身角度（`bodyRoll`）平緩地拉向由腳尖決定的地面切線角度（`targetRoll`）。這完美模擬了機體重心的轉移與塑膠機構本身的柔性（Flexibility），讓步伐切換時的起伏變得有重量感且自然，而不是生硬的瞬間跳變。
+---
 
-### E. 慣性與動量 (Inertia & Momentum)
-* **對應真實物理：** 牛頓第二運動定律 $a = \frac{\Sigma F}{m}$
-* **程式碼參數：** `bodyMass` (10 kg), `totalForceX`, `bodyVelX`
-* **說明：** 
-  透過對所有的地面摩擦力求和得到淨力 `totalForceX`，除以機器人的質量 `bodyMass` 後得到加速度。這意味著機器人實體帶有「慣性（Inertia）」，如果因為地形起伏導致所有腳短暫騰空，機器人還會依賴殘餘的 `bodyVelX` 繼續向前滑行一小段距離（帶有些微的空氣與關節軸承阻力衰減 `bodyVelX *= 0.99`），還原了實體機器人因動能而產生的滑行感。
+## 3. 運動與靜止沉降的物理過渡 (Moving vs. Sitting / Settling)
+
+機器人在「持續行走（Moving）」與「停止後靜止於地面（Sitting / Settling）」之間，系統採用了無縫接軌的物理降解演算法。
+
+### 3.1 停止運動學 (Kinematic Freeze)
+當使用者暫停播放 (`isPlaying = false`)，代表切斷馬達電源：
+- 主軸角速度 `simSpeed` 的作用被阻斷。
+- 所有的幾何連桿姿態被**凍結**在當下的角度（`theta` 停止增加）。這對應真實世界中帶有蝸輪蝸桿減速機（Worm Gear）的馬達，一旦斷電便會自鎖不逆轉。
+
+### 3.2 物理殘餘與阻尼沉降 (Physics Settling Algorithm)
+即便幾何學凍結，重力與彈性引擎卻**並未停止**。
+關閉電源的機器人，會因為原有的車身傾角慣性與橡膠腳墊的回彈，產生「重心墜落」與「懸吊微震」的過程。
+```javascript
+const isSettled = !isPlaying && Math.abs(bodyRollVel) < 1e-4 && Math.abs(targetRoll - bodyRoll) < 1e-4;
+if (AdminController.isAnimating(isPlaying, isSettled)) {
+    requestAnimationFrame(animate);
+}
+```
+只要 `isSettled` 尚未滿足極小容差（角速度與角度誤差皆小於 $10^{-4}$），主迴圈就會繼續推演物理方程式。這使得機器人停下的瞬間，會展現出自然的重力下壓與前後微晃，最終將所有動能被阻尼耗散殆盡後，才穩固地「坐（Sit）」入物理平衡態。
+
+### 3.3 慢動作全域時間縮放 (Slow-Motion Time Dilation)
+為保證慢動作下依然符合嚴格的牛頓力學，系統不只縮小了曲柄角度增量，還將傳遞給物理積分引擎的時間步長 `dt` 進行了等比縮放：
+```javascript
+const factor = isSlowMo ? 0.2 : 1.0;
+const simDt = dt * factor; 
+renderFrame(theta, isPlaying, simDt);
+```
+這項核心設計代表：
+1. `bodyRoll += bodyRollVel * simDt`
+2. `bodyVelX += a * simDt`
+不論是落下速度、打滑漸變，還是阻尼搖晃的頻率，在時間尺度上都被完全線性地拉長。就算在慢動作中突然按下「暫停」，機器人向下沉降的重力墜落感也會精準地呈現 $0.2\times$ 速率的高速攝影機視覺效果。

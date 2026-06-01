@@ -171,8 +171,43 @@ let isPlaying = false; // 預設停止播放，使機器人靜態站立
 let showPaths = false;
 let simSpeed = -0.1;
 let gravityScale = 1.0;
-let isAdminMode = false; // Hidden Admin Authority
-let overlayAlpha = 0;   // For smooth fade in/out
+
+// ==========================================
+//  Admin Mode Controller
+// ==========================================
+const AdminController = {
+    isActive: false,
+    overlayAlpha: 0,
+    fadeSpeed: 0.05,
+    
+    toggle() {
+        this.isActive = !this.isActive;
+        const panel = document.querySelector('.control-panel');
+        if (panel) {
+            panel.classList.toggle('admin-mode', this.isActive);
+        }
+        console.log("Admin Authority: " + (this.isActive ? "Enabled" : "Disabled"));
+    },
+    
+    updateFade() {
+        if (this.isActive) {
+            this.overlayAlpha = Math.min(1, this.overlayAlpha + this.fadeSpeed);
+        } else {
+            this.overlayAlpha = Math.max(0, this.overlayAlpha - this.fadeSpeed);
+        }
+    },
+    
+    isAnimating(isPlaying, isSettled) {
+        return isPlaying || !isSettled || 
+               (this.isActive && this.overlayAlpha < 1) || 
+               (!this.isActive && this.overlayAlpha > 0);
+    },
+    
+    getStrokeColor() {
+        return this.isActive ? '#000000' : 'transparent';
+    }
+};
+
 let isSlowMo = false;
 let showGroundline = true;
 let showFriction = true;
@@ -188,6 +223,13 @@ let accumulatedTheta = 0;
 let bodyX = 0;
 let prevBodyX = 0; // 追蹤上一幀的機身世界 X 座標，用於計算相對背景位移
 let bodyY = 0; // 由觸地約束決定
+
+// --- 攝影機與運鏡狀態 ---
+let cameraX = 0;
+let cameraVelX = 0;
+let smoothBodyVelX = 0;
+const camOmega = 12.0; // 臨界阻尼的響應頻率 (提高數值，避免落後太多頂到螢幕邊緣)
+const camTrail = 0.05; // 刻意滯後的參數，保證攝影機永遠在機器人後方
 let bodyRoll = 0; // 機身傾角 (弧度)
 let bodyRollVel = 0;
 let bodyVelX = 0; // 機身水平速度
@@ -248,7 +290,8 @@ function mapCoords(p, includeHop = true) {
     const rx = p.x * cosR - p.y * sinR;
     const ry = bodyY + p.x * sinR + p.y * cosR;
     // 2. 世界座標系轉螢幕座標系 (y 軸向上，y_ground = 0 對應螢幕的 targetGy)
-    return { x: cx + rx * scale, y: targetGy - ry * scale };
+    // 加上 (bodyX - cameraX) 的攝影機相對位移，展現慣性與速度感
+    return { x: cx + (bodyX - cameraX + rx) * scale, y: targetGy - ry * scale };
 }
 
 export function getIntersection(C1, r1, C2, r2) {
@@ -791,12 +834,31 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             }
         }
 
+        // --- 攝影機運鏡動力學 (Game Camera Dynamics) ---
+        // 1. 低通濾波處理瞬間速度 (過濾步伐產生的脈衝抖動)
+        // 使用 EMA (Exponential Moving Average)
+        const filterAlpha = 1.0 - Math.exp(-dt / 0.1);
+        smoothBodyVelX += (bodyVelX - smoothBodyVelX) * filterAlpha;
+
+        // 2. 計算目標 (Trailing Camera)
+        // 為了展現機器的力量感，攝影機目標刻意落後於機器人 (減去速度向量)
+        // 使用 smoothBodyVelX (像素/秒) * camTrail (秒) 來計算滯後距離
+        let targetCamX = bodyX - (smoothBodyVelX * camTrail);
+
+        // 3. 臨界阻尼系統計算 (Critically Damped Spring)
+        let a_cam = (camOmega * camOmega) * (targetCamX - cameraX) - (2 * camOmega) * cameraVelX;
+        cameraVelX += a_cam * dt;
+
+        let prevCameraX = cameraX;
+        cameraX += cameraVelX * dt;
+        let deltaCamX = (cameraX - prevCameraX) * scale;
+
         // --- 開始繪製背景與機器人 ---
         const cx = canvas.width / 2;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 更新背景位移與渲染背景
-        background.update(deltaX);
+        // 更新背景位移與渲染背景 (使用攝影機的位移，而非機器人剛性位移)
+        background.update(deltaCamX);
         background.render(ctx);
 
         if (near && far) {
@@ -818,7 +880,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             ctx.beginPath();
             ctx.moveTo(0, targetGy);
             ctx.lineTo(canvas.width, targetGy);
-            ctx.strokeStyle = '#334155'; // 暗板岩色地面線
+            ctx.strokeStyle = AdminController.getStrokeColor(); // admin mode 顯示黑色，平常透明
             ctx.lineWidth = 3;
             ctx.stroke();
 
@@ -946,9 +1008,9 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             ctx.drawImage(robotCanvas, 0, 0);
 
             // --- 高亮著地足 (依據物理判定 lastGroundedIndices) ---
-            if (overlayAlpha > 0.01) {
+            if (AdminController.overlayAlpha > 0.01) {
                 ctx.save();
-                ctx.globalAlpha = overlayAlpha;
+                ctx.globalAlpha = AdminController.overlayAlpha;
                 for (let i = 0; i < 6; i++) {
                     if (lastGroundedIndices.includes(i)) {
                         const f_local = allFeetLocal[i];
@@ -1161,9 +1223,9 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         }
 
         // 8. 繪製統計數據面板 (僅在管理員模式下顯示)
-        if (overlayAlpha > 0.01) {
+        if (AdminController.overlayAlpha > 0.01) {
             ctx.save();
-            ctx.globalAlpha = overlayAlpha;
+            ctx.globalAlpha = AdminController.overlayAlpha;
             drawOverlayStats();
             ctx.restore();
         }
@@ -1187,7 +1249,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 
 function drawOverlayStats() {
     const w = 260;
-    const h = 230;
+    const h = 205; // 縮小面板高度，因為我們移除了多餘的速度顯示
     const x = canvas.width - w - 20;
     const y = 20;
 
@@ -1225,19 +1287,20 @@ function drawOverlayStats() {
         ctx.fillText(value, x + w - 20, ty);
     };
 
-    drawRow('前次腳步推進:', `${displayDist.toFixed(1)} mm`, '#38bdf8', y + 68);
-    drawRow('前次腳步均速:', `${displaySpeed.toFixed(1)} mm/s`, '#34d399', y + 93);
-    drawRow('當前移動速度:', `${smoothedSpeed.toFixed(1)} mm/s`, '#facc15', y + 118);
-    drawRow('地面支撐狀態:', isStableSupport ? '穩定支撐' : '失去平衡 (單點)', isStableSupport ? '#10b981' : '#ef4444', y + 143);
+    // 只顯示最穩定且具備比較價值的「週期平均速度」
+    // 這個數值代表機器人每走完完整一步的真實平均推進能力，不會隨步伐抖動，最適合用來比較不同連桿長度的效能
+    drawRow('每圈前進速度:', `${displayDist.toFixed(1)} mm`, '#38bdf8', y + 68);
+    drawRow('每秒前進速度:', `${displaySpeed.toFixed(1)} mm/s`, '#34d399', y + 93);
+    drawRow('地面支撐狀態:', isStableSupport ? '穩定支撐' : '失去平衡', isStableSupport ? '#10b981' : '#ef4444', y + 118);
 
     // 5. Grounded Foot Indicators
     ctx.textAlign = 'left';
     ctx.font = 'bold 13px system-ui';
     ctx.fillStyle = '#f8fafc';
-    ctx.fillText('觸地狀態 (綠:觸地/灰:懸空)', x + 20, y + 167);
+    ctx.fillText('觸地狀態 (綠:觸地/灰:懸空)', x + 20, y + 142);
 
-    const startY = y + 187;
-    const startY2 = y + 207;
+    const startY = y + 162;
+    const startY2 = y + 182;
 
     const drawIndicator = (idx, label, px, py) => {
         const isGrounded = lastGroundedIndices.includes(idx);
@@ -1275,13 +1338,15 @@ function animate() {
     dt = Math.min(0.03, dt); // 限制單幀最大物理步長，防後台切換爆炸
     lastFrameTime = now;
 
+    const factor = isSlowMo ? 0.2 : 1.0;
+    const simDt = dt * factor;
+
     if (isPlaying) {
         // 確保參數化 SVG 在最初幾幀能成功覆蓋 svgs.js 的非同步加載結果
         if (globalSimTime < 1.0) updateLegSVGPath();
 
-        const factor = isSlowMo ? 0.2 : 1.0;
         theta += simSpeed * factor;
-        globalSimTime += dt * factor;
+        globalSimTime += simDt;
 
         // Track cycle completion for averaging (when theta crosses 0)
         // Check for wrapping in both directions
@@ -1294,6 +1359,10 @@ function animate() {
                 // Blend cycle average for smoothness, but faster responsive if it was 0
                 const alpha = cycleAvgSpeed === 0 ? 1.0 : 0.3;
                 cycleAvgSpeed = (1 - alpha) * cycleAvgSpeed + alpha * newAvg;
+
+                // 將畫布座標系的數據轉換為物理單位 (mm) 並更新給 UI 顯示
+                displaySpeed = cycleAvgSpeed / globalScale;
+                displayDist = dx / globalScale;
             }
             lastCycleX = bodyX;
             lastCycleTime = globalSimTime;
@@ -1325,10 +1394,10 @@ function animate() {
         document.getElementById('angleVal').innerText = deg + '°';
     }
 
-    renderFrame(theta, isPlaying, dt);
+    renderFrame(theta, isPlaying, simDt);
 
     const isSettled = !isPlaying && Math.abs(bodyRollVel) < 1e-4 && Math.abs(targetRoll - bodyRoll) < 1e-4;
-    if (isPlaying || !isSettled || (isAdminMode && overlayAlpha < 1) || (!isAdminMode && overlayAlpha > 0)) {
+    if (AdminController.isAnimating(isPlaying, isSettled)) {
         isLooping = true;
         requestAnimationFrame(animate);
     } else {
@@ -1337,9 +1406,7 @@ function animate() {
     }
 
     // Update overlay Alpha for smooth fade
-    const fadeSpeed = 0.05;
-    if (isAdminMode) overlayAlpha = Math.min(1, overlayAlpha + fadeSpeed);
-    else overlayAlpha = Math.max(0, overlayAlpha - fadeSpeed);
+    AdminController.updateFade();
 
     // Update environment only when running or in physics motion
     // (Scenic updates removed)
@@ -1435,12 +1502,7 @@ if (aiStatusEl) {
         lastClickTime = now;
 
         if (clickCount >= 3) {
-            isAdminMode = !isAdminMode;
-            const panel = document.querySelector('.control-panel');
-            if (panel) {
-                panel.classList.toggle('admin-mode', isAdminMode);
-            }
-            console.log("Admin Authority: " + (isAdminMode ? "Enabled" : "Disabled"));
+            AdminController.toggle();
             clickCount = 0; // Reset
             triggerUpdate(); // Refresh to show/hide overlay
         }

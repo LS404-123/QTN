@@ -138,10 +138,24 @@ export class BGScroller {
     spawnCloud(horizon, randomX = false) {
         if (this.activeClouds.length >= this.config.limits.maxClouds) return;
 
+        // 生成右側雲朵
         const rightmostX = this.activeClouds.reduce((max, c) => Math.max(max, c.x), -1000);
         if (randomX || rightmostX < this.canvas.width - this.nextCloudSpacing) {
             const img = this.cloudImages[Math.floor(Math.random() * this.cloudImages.length)];
-            const x = randomX ? Math.random() * this.canvas.width : this.canvas.width;
+            const x = randomX ? Math.random() * this.canvas.width : this.canvas.width + 50;
+            const y = -10 + Math.random() * ((horizon * this.canvas.height) * 0.3 + 10);
+            const speed = this.config.speeds.cloud * (0.8 + Math.random() * 0.4);
+            const scale = 0.4 + Math.random() * 0.5;
+            const renderIndex = Math.random() < 0.3 ? 0.5 : 1.5;
+
+            this.activeClouds.push(new MovingEntity(img, x, y, speed, scale, renderIndex));
+        }
+
+        // 生成左側雲朵 (當背景往右滾動時)
+        const leftmostX = this.activeClouds.reduce((min, c) => Math.min(min, c.x), this.canvas.width + 1000);
+        if (!randomX && leftmostX > this.nextCloudSpacing) {
+            const img = this.cloudImages[Math.floor(Math.random() * this.cloudImages.length)];
+            const x = -200; // 從左側畫面外進入
             const y = -10 + Math.random() * ((horizon * this.canvas.height) * 0.3 + 10);
             const speed = this.config.speeds.cloud * (0.8 + Math.random() * 0.4);
             const scale = 0.4 + Math.random() * 0.5;
@@ -166,14 +180,21 @@ export class BGScroller {
     spawnTree(horizon) {
         if (this.activeTrees.length >= this.config.limits.maxTrees) return;
 
+        const roadTop = this.getRoadTop();
+        const totalGap = roadTop - horizon;
+        const bandHeight = (roadTop - totalGap * 0.1 - (horizon + totalGap * 0.3)) / 3;
+        const activeHorizon = horizon + totalGap * 0.3;
+
+        // 生成右側樹木
         const rightmostX = this.activeTrees.reduce((max, t) => Math.max(max, t.x), -1000);
         if (rightmostX < this.canvas.width - this.nextTreeSpacing) {
-            const roadTop = this.getRoadTop();
-            const totalGap = roadTop - horizon;
-            const bandHeight = (roadTop - totalGap * 0.1 - (horizon + totalGap * 0.3)) / 3;
-            const activeHorizon = horizon + totalGap * 0.3;
+            this.addTree(this.canvas.width + 50, activeHorizon, bandHeight, Math.floor(Math.random() * 3));
+        }
 
-            this.addTree(this.canvas.width, activeHorizon, bandHeight, Math.floor(Math.random() * 3));
+        // 生成左側樹木 (當背景往右滾動時)
+        const leftmostX = this.activeTrees.reduce((min, t) => Math.min(min, t.x), this.canvas.width + 1000);
+        if (leftmostX > this.nextTreeSpacing) {
+            this.addTree(-150, activeHorizon, bandHeight, Math.floor(Math.random() * 3));
         }
     }
 
@@ -223,8 +244,8 @@ export class BGScroller {
         });
 
         const scale = this.getGlobalScale();
-        this.activeClouds = this.activeClouds.filter(c => !c.isOffScreen(scale));
-        this.activeTrees = this.activeTrees.filter(t => !t.isOffScreen(scale));
+        this.activeClouds = this.activeClouds.filter(c => !c.isOffScreen(scale, this.canvas.width));
+        this.activeTrees = this.activeTrees.filter(t => !t.isOffScreen(scale, this.canvas.width));
         this.activeTrees.sort((a, b) => a.targetBottomPercent - b.targetBottomPercent);
     }
 
@@ -284,9 +305,10 @@ class Sprite {
         };
     }
 
-    isOffScreen(globalScale) {
+    isOffScreen(globalScale, canvasWidth) {
         const { w } = this.getDimensions(globalScale);
-        return this.x + w < 0;
+        // 雙向檢測：確保物件在左側或右側畫面外足夠遠的地方被清除
+        return this.x + w < -300 || this.x > canvasWidth + 300;
     }
 }
 
@@ -305,8 +327,9 @@ class BackgroundLayer extends Sprite {
     draw(ctx, canvasWidth, canvasHeight, targetBottomPercent, globalScale) {
         const { w, h } = this.getDimensions(globalScale);
         
-        // 僅在繪製時取模以防超出，不修改 scrollX 本身的值
-        const currentScrollX = this.scrollX % w;
+        // 修復 JavaScript 負數取模問題，確保 currentScrollX 永遠落在 [0, w) 區間
+        // 這樣 x 的起點永遠會是負數 (或 0)，確保左側邊緣不會有破圖空白
+        const currentScrollX = ((this.scrollX % w) + w) % w;
 
         const yPos = (canvasHeight * targetBottomPercent) - h;
         const overlap = 1.5;

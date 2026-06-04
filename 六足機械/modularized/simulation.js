@@ -3,7 +3,10 @@
  */
 import { rodSVGPath, gearboxSVGPath, crankSVGPath, motorSVGPath } from './svgs.js';
 import { BGScroller } from './bg_scroll.js';
+import { ChronoRecorder } from './chrono_recorder.js';
 
+// Initialize ChronoRecorder with 5 frames per cycle (72 degrees)
+const chronoRecorder = new ChronoRecorder(1120, 630, 5);
 let legSVGPath = null; // 動態更新的腳部路徑
 // --- Speed Visualization Configuration ---
 const speedVizConfig = {
@@ -1234,6 +1237,11 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         if (typeof recordAnalyticsData === 'function') {
             recordAnalyticsData();
         }
+
+        // Live Trailing Capture Hook for Chronophotography
+        if (chronoRecorder.isRecording) {
+            chronoRecorder.captureFrameHook(currentTheta, robotCanvas, cameraX, scale);
+        }
     } catch (err) {
         console.error("Render error in hexapod sim:", err);
         ctx.save();
@@ -1670,33 +1678,39 @@ const MAX_ANALYTICS_WINDOW = 120; // 2 seconds at 60fps
 export function getSimplifiedAnalytics() {
     const recentHops = hopYHistory.slice(-MAX_ANALYTICS_WINDOW);
     const hopRange = recentHops.length > 0 ? (Math.max(...recentHops) - Math.min(...recentHops)) : 0;
-
-    // 使用正確的全域旗標判定
+    
+    // 取出最新的全域物理狀態
     const hasConflict = isClashing;
+    const currentSpeed = (typeof displaySpeed !== 'undefined') ? parseFloat(displaySpeed.toFixed(1)) : 0;
+    const isStable = (typeof isStableSupport !== 'undefined') ? isStableSupport : true;
 
-    let stability = "優";
-
-    if (hasConflict) stability = "幾何衝突 (卡死)";
-    else if (hopRange > 10) stability = "差";
-    else if (hopRange > 5) stability = "普通";
+    // 產生診斷標籤
+    let tags = [];
+    if (hasConflict) {
+        tags.push("急診-卡死");
+    } else {
+        if (!isStable) tags.push("骨科-失去平衡跌倒");
+        if (currentSpeed < 5) tags.push("復健科-速度過慢或原地打滑");
+        else if (currentSpeed > 15 && hopRange > 5) tags.push("健康保健-速度快但顛簸");
+        else if (currentSpeed > 10 && isStable && hopRange <= 5) tags.push("健康保健-完美步伐");
+    }
 
     return {
+        symptom: {
+            isClashing: hasConflict,
+            isStable: isStable,
+            hopRange: hasConflict ? 0 : parseFloat(hopRange.toFixed(1)),
+            speed: currentSpeed
+        },
+        diagnosis_tags: tags,
         params: {
             legLength: Math.round(L_leg / globalScale),
             footLength: Math.round(L_foot / globalScale),
             blueLink: Math.round(L_blue / globalScale),
             bodyWidth: Math.round(S / globalScale),
-            crankRadius: Math.round(R), // R 通常沒縮放，但取整較美觀
-            phaseDiff: Math.round((phaseDiff / Math.PI) * 180),
-            speed: Math.round(simSpeed * 10) / 10
-        },
-
-        physics: {
-            hopRange: hasConflict ? "N/A" : hopRange.toFixed(1),
-            stability: stability,
-            hasConflict: hasConflict
-        },
-        isMoving: !hasConflict && Math.abs(simSpeed) > 0
+            crankRadius: Math.round(R),
+            phaseDiff: Math.round((phaseDiff / Math.PI) * 180)
+        }
     };
 }
 
@@ -1734,6 +1748,15 @@ animate();
 
 // 將需要全域存取的函數掛載到 window
 window.getSimplifiedAnalytics = getSimplifiedAnalytics;
+window.getIsPlaying = () => isPlaying;
+window.startChronoRecording = (paramsJson) => {
+    const promise = chronoRecorder.start(paramsJson, cameraX, theta, isPlaying);
+    // Force the first frame capture immediately if recording just started
+    if (chronoRecorder.isRecording) {
+        chronoRecorder.doCapture(robotCanvas, cameraX, scale);
+    }
+    return promise;
+};
 
 
 

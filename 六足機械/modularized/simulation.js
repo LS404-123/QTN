@@ -267,6 +267,10 @@ let smoothedSpeed = 0;
 let cycleAvgSpeed = 0;
 let lastCycleX = 0;
 let lastCycleTime = 0;
+
+let minComY_Cycle = Infinity;
+let maxComY_Cycle = -Infinity;
+let comVerticalChange_Display = 0;
 let prevTheta = 0;
 let globalSimTime = 0;
 let lastFrameTime = performance.now();
@@ -1260,7 +1264,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 
 function drawOverlayStats() {
     const w = 260;
-    const h = 205; // 縮小面板高度，因為我們移除了多餘的速度顯示
+    const h = 230; // 增加面板高度以容納 COM 指示
     const x = canvas.width - w - 20;
     const y = 20;
 
@@ -1303,15 +1307,16 @@ function drawOverlayStats() {
     drawRow('每圈前進距離:', `${displayDist.toFixed(1)} mm`, '#38bdf8', y + 68);
     drawRow('每秒前進速度:', `${displaySpeed.toFixed(1)} mm/s`, '#34d399', y + 93);
     drawRow('地面支撐狀態:', isStableSupport ? '穩定支撐' : '失去平衡', isStableSupport ? '#10b981' : '#ef4444', y + 118);
+    drawRow('COM 重心起伏:', `${comVerticalChange_Display.toFixed(1)} mm`, '#facc15', y + 143);
 
     // 5. Grounded Foot Indicators
     ctx.textAlign = 'left';
     ctx.font = 'bold 13px system-ui';
     ctx.fillStyle = '#f8fafc';
-    ctx.fillText('觸地狀態 (綠:觸地/灰:懸空)', x + 20, y + 142);
+    ctx.fillText('觸地狀態 (綠:觸地/灰:懸空)', x + 20, y + 167);
 
-    const startY = y + 162;
-    const startY2 = y + 182;
+    const startY = y + 187;
+    const startY2 = y + 207;
 
     const drawIndicator = (idx, label, px, py) => {
         const isGrounded = lastGroundedIndices.includes(idx);
@@ -1359,6 +1364,11 @@ function animate() {
         theta += simSpeed * factor;
         globalSimTime += simDt;
 
+        // track COM vertical position
+        const currentComY = bodyY - bodyYOffset * Math.cos(bodyRoll);
+        if (currentComY < minComY_Cycle) minComY_Cycle = currentComY;
+        if (currentComY > maxComY_Cycle) maxComY_Cycle = currentComY;
+
         // Track cycle completion for averaging (when theta crosses 0)
         // Check for wrapping in both directions
         const crossedZero = (prevTheta > theta && simSpeed > 0) || (prevTheta < theta && simSpeed < 0);
@@ -1374,9 +1384,15 @@ function animate() {
                 // 將畫布座標系的數據轉換為物理單位 (mm) 並更新給 UI 顯示
                 displaySpeed = cycleAvgSpeed / globalScale;
                 displayDist = dx / globalScale;
+                
+                if (maxComY_Cycle !== -Infinity && minComY_Cycle !== Infinity) {
+                    comVerticalChange_Display = (maxComY_Cycle - minComY_Cycle) / globalScale;
+                }
             }
             lastCycleX = bodyX;
             lastCycleTime = globalSimTime;
+            minComY_Cycle = Infinity;
+            maxComY_Cycle = -Infinity;
         }
         prevTheta = theta;
 
@@ -1637,6 +1653,9 @@ function resetParameters() {
     lastCycleX = 0;
     cycleAvgSpeed = 0;
     smoothedSpeed = 0;
+    minComY_Cycle = Infinity;
+    maxComY_Cycle = -Infinity;
+    comVerticalChange_Display = 0;
 
     triggerUpdate();
 }

@@ -785,7 +785,8 @@ function animate() {
         // 確保參數化 SVG 在最初幾幀能成功覆蓋 svgs.js 的非同步加載結果
         if (globalSimTime < 1.0) updateLegSVGPath();
 
-        theta += simSpeed * factor;
+        // 將 simSpeed (原為 rad/frame) 轉換為 rad/sec (假設基準 60fps)，並乘上時間差 simDt 確保跨裝置等速
+        theta += (simSpeed * 60) * simDt;
         globalSimTime += simDt;
 
         // track COM vertical position
@@ -828,7 +829,7 @@ function animate() {
         prevTheta = theta;
 
         if (playOnePeriod) {
-            accumulatedTheta += Math.abs(simSpeed);
+            accumulatedTheta += Math.abs(simSpeed * 60) * simDt;
             if (accumulatedTheta >= Math.PI * 2) {
                 isPlaying = false;
                 playOnePeriod = false;

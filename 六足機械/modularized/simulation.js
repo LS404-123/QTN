@@ -1,7 +1,7 @@
 /**
  * Hexapod Simulator - Kinematics and Physics Logic
  */
-import { rodSVGPath, gearboxSVGPath, crankSVGPath, motorSVGPath } from './svgs.js';
+import { HexapodRenderer } from './renderer.js';
 import { BGScroller } from './bg_scroll.js';
 import { ChronoRecorder } from './chrono_recorder.js';
 import { TrajectoryTracker } from './trajectory.js';
@@ -46,6 +46,8 @@ const robotCanvas = document.createElement('canvas');
 const robotCtx = robotCanvas.getContext('2d');
 robotCanvas.width = canvas.width;
 robotCanvas.height = canvas.height;
+
+const renderer = new HexapodRenderer(ctx, offCtx, robotCtx, canvas);
 
 // Fixed Machine Geometry Constants
 // Machine Geometry Parameters
@@ -115,19 +117,6 @@ function updateLegSVGPath() {
 }
 // Initial generation
 updateLegSVGPath();
-
-// Gearbox Colors (Reference from 齒輪箱.html)
-const gearboxFill = '#8a8d91';
-const gearboxStroke = '#fdfbf7';
-const gearboxAnnulusFill = '#808082';
-const gearboxHoleFill = '#000000';
-
-// Motor Colors (Reference from 馬達.html)
-const motorLightGrey = '#e5e5e5';
-const motorMediumGrey = '#bbbbbb';
-const motorDarkGrey = '#7a7a7a';
-const motorBronze = '#cd7f32';
-const motorBronzeStroke = '#8b4513';
 
 // Viewport Settings
 const scale = 3.5;
@@ -284,23 +273,6 @@ let lastFrameTime = performance.now();
 
 // Viewport Settings (Moved to top to prevent ReferenceError)
 
-/**
- * Transforms internal coordinates to screen space based on Camera POV
- * @param {Object} p - {x, y} coordinate
- * @param {boolean} includeHop - Whether to apply the dynamic bounce offset
- */
-function mapCoords(p, includeHop = true) {
-    // p.x, p.y 是相對於機身中心的座標
-    const cosR = Math.cos(bodyRoll);
-    const sinR = Math.sin(bodyRoll);
-    // 1. 旋轉並平移至世界座標系 (不加 bodyX，使機器人在螢幕上水平靜止在起始位置)
-    const rx = p.x * cosR - p.y * sinR;
-    const ry = bodyY + p.x * sinR + p.y * cosR;
-    // 2. 世界座標系轉螢幕座標系 (y 軸向上，y_ground = 0 對應螢幕的 targetGy)
-    // 加上 (bodyX - cameraX) 的攝影機相對位移，展現慣性與速度感
-    return { x: cx + (bodyX - cameraX + rx) * scale, y: targetGy - ry * scale };
-}
-
 export function getIntersection(C1, r1, C2, r2) {
     const dx = C2.x - C1.x, dy = C2.y - C1.y;
     const d = Math.sqrt(dx * dx + dy * dy);
@@ -389,144 +361,6 @@ export function getLegPositions(angle, groundM = 0) {
     const foot_r = getEllipticFootPoint(RT, Pr, groundM);
 
     return { ML, MT, FT, RT, foot_f, foot_m, foot_r };
-}
-
-// --- Drawing Core ---
-
-function drawSVGLink(p1, p2, svgPath, h1x, h1y, h2x, h2y, strokeColor, fillColor, isFar, targetCtx = ctx) {
-    if (!p1 || !p2 || !svgPath) return; // 確保路徑物件已存在
-    const m1 = mapCoords(p1), m2 = mapCoords(p2);
-    const dx = m2.x - m1.x, dy = m2.y - m1.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const svgDist = Math.sqrt(Math.pow(h2x - h1x, 2) + Math.pow(h2y - h1y, 2));
-    const scale = dist / svgDist;
-    const angle = Math.atan2(dy, dx);
-    const svgAngle = Math.atan2(h2y - h1y, h2x - h1x);
-
-    targetCtx.save();
-    targetCtx.translate(m1.x, m1.y);
-    targetCtx.rotate(angle - svgAngle);
-    targetCtx.scale(scale, scale);
-    targetCtx.translate(-h1x, -h1y);
-
-    targetCtx.globalAlpha = 1.0; // Layering handled by opaque drawing in group
-    targetCtx.strokeStyle = strokeColor;
-    targetCtx.lineWidth = 1.5 / scale;
-    if (fillColor) {
-        targetCtx.fillStyle = fillColor;
-        targetCtx.fill(svgPath);
-    }
-    targetCtx.stroke(svgPath);
-    targetCtx.restore();
-}
-
-function drawLine(p1, p2, color, width, targetCtx = ctx) {
-    if (!p1 || !p2) return;
-    const m1 = mapCoords(p1), m2 = mapCoords(p2);
-    targetCtx.beginPath();
-    targetCtx.moveTo(m1.x, m1.y);
-    targetCtx.lineTo(m2.x, m2.y);
-    targetCtx.strokeStyle = color;
-    targetCtx.lineWidth = width;
-    targetCtx.lineCap = 'round';
-    targetCtx.stroke();
-}
-
-function drawPoint(p, color, radius, targetCtx = ctx, includeHop = true) {
-    if (!p) return;
-    const mp = mapCoords(p, includeHop);
-    targetCtx.beginPath();
-    targetCtx.arc(mp.x, mp.y, radius, 0, Math.PI * 2);
-    targetCtx.fillStyle = color;
-    targetCtx.fill();
-}
-
-function renderSide(data, isFar, targetCtx = ctx) {
-    const jointColor = isFar ? '#334155' : '#1e293b'; // Slightly different for Far
-    const widthScale = isFar ? 0.8 : 1.0;
-
-    // Define drawing parts
-    const drawCrank = () => {
-        const crankFill = isFar ? '#f1f5f9' : '#e2e8f0';
-        const crankStroke = isFar ? '#cbd5e1' : '#94a3b8';
-        if (typeof crankSVGPath !== 'undefined') {
-            drawSVGLink(C_crank, data.ML, crankSVGPath, 8.7, 8.7, 8.7, currentCrankHoleY, crankStroke, crankFill, isFar, targetCtx);
-        } else {
-            const crankColor = isFar ? '#e2e8f0' : '#cbd5e1';
-            drawLine(C_crank, data.ML, crankColor, 4 * widthScale, targetCtx);
-        }
-    };
-
-    const drawRods = (isFar) => {
-        const rodFill = isFar ? '#93c5fd' : '#3b82f6';
-        const rodStroke = isFar ? '#60a5fa' : '#1d4ed8';
-        if (isFar) {
-            drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
-            drawSVGLink(Pf, data.MT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
-            drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
-        } else {
-            drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
-            drawSVGLink(Pf, data.MT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
-            drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx);
-        }
-    };
-
-    const drawLegs = () => {
-        const legFill = isFar ? '#fef08a' : '#facc15';
-        const legStroke = isFar ? '#fde047' : '#b45309';
-        drawSVGLink(data.FT, Pf, legSVGPath, 30, 20, 30, legSVG_h2y, legStroke, legFill, isFar, targetCtx);
-        drawSVGLink(data.MT, data.ML, legSVGPath, 30, 20, 30, legSVG_h2y, legStroke, legFill, isFar, targetCtx);
-        drawSVGLink(data.RT, Pr, legSVGPath, 30, 20, 30, legSVG_h2y, legStroke, legFill, isFar, targetCtx);
-    };
-
-    // Execute drawing based on final depth requirements
-    if (isFar) {
-        // Far Side: Rod (Bottom) → Leg (Middle) → Crank (Top)
-        drawRods(isFar);
-        drawLegs();
-        drawCrank();
-    } else {
-        // Near Side: Crank (Bottom) → Leg (Middle) → Rod (Top)
-        drawCrank();
-        drawLegs();
-        drawRods(isFar);
-    }
-
-    // Joints always on top
-    drawPoint(data.ML, jointColor, 4 * widthScale, targetCtx);
-    drawPoint(data.FT, jointColor, 4 * widthScale, targetCtx);
-    drawPoint(data.MT, jointColor, 4 * widthScale, targetCtx);
-    drawPoint(data.RT, jointColor, 4 * widthScale, targetCtx);
-}
-
-/**
- * 繪製單個足部在地面上的陰影
- */
-/**
- * 繪製單個足部在地面上的陰影
- * @param {Object} footPosWorld - 足部在世界座標系下的位置 {x, y}
- */
-function drawFootShadow(footLocal) {
-    const visualPos = mapCoords(footLocal);
-    const distPx = targetGy - visualPos.y;
-    const dist = Math.max(0, distPx / scale);
-    const maxDist = 35 * globalScale;
-    const opacity = Math.max(0, 0.25 * (1 - dist / maxDist));
-    if (opacity <= 0) return;
-
-    const baseWidth = 14 * scale;
-    const baseHeight = 4 * scale;
-    const sizeMult = 1 - (dist / maxDist) * 0.4;
-    const width = baseWidth * sizeMult;
-    const height = baseHeight * sizeMult;
-
-    ctx.save();
-    ctx.translate(visualPos.x, targetGy);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, width, height, 0, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
-    ctx.fill();
-    ctx.restore();
 }
 
 /**
@@ -849,10 +683,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         let deltaCamX = (cameraX - prevCameraX) * scale;
 
         // --- 開始繪製背景與機器人 ---
-        const cx = canvas.width / 2;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // 更新背景位移與渲染背景 (使用攝影機的位移，而非機器人剛性位移)
         background.update(deltaCamX);
         background.render(ctx);
 
@@ -862,359 +693,23 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
                 far.foot_f, far.foot_m, far.foot_r
             ];
 
-            // 4. 計算各腳掌在世界座標系下的位置
-            const allFeetWorld = allFeetLocal.map(f => ({
-                x: bodyX + f.x * Math.cos(bodyRoll) - f.y * Math.sin(bodyRoll),
-                y: bodyY + f.x * Math.sin(bodyRoll) + f.y * Math.cos(bodyRoll)
-            }));
+            const cx = canvas.width / 2;
 
-            // 交由 trajectoryTracker 內部處理是否要紀錄以及轉換世界座標
             trajectoryTracker.record(allFeetLocal, bodyX, bodyY, bodyRoll, isPlaying, bodyVelX);
 
-            // 3. 繪製足部在地面上的陰影 (將 world 傳參改為 local 傳參)
-            allFeetLocal.forEach(f => drawFootShadow(f));
-
-            // 4. 繪製固定水平地平面 (世界座標 y = 0 對應螢幕的 targetGy)
-            ctx.beginPath();
-            ctx.moveTo(0, targetGy);
-            ctx.lineTo(canvas.width, targetGy);
-            ctx.strokeStyle = AdminController.getStrokeColor(); // admin mode 顯示黑色，平常透明
-            ctx.lineWidth = 3;
-            ctx.stroke();
-
-            // 5. 渲染 Far 側腳 (繪製至 offscreen Canvas 以處理半透明)
-            offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
-            renderSide(far, true, offCtx);
-
-            // 6. 渲染機器人整體結構 (利用 robotCanvas 做快取)
-            robotCtx.clearRect(0, 0, robotCanvas.width, robotCanvas.height);
-
-            // 繪製 Far 側
-            robotCtx.save();
-            robotCtx.globalAlpha = 0.75;
-            robotCtx.drawImage(offscreenCanvas, 0, 0);
-            robotCtx.restore();
-
-            // 繪製連接件與機身主樑 (使用相對機身中心的局部高度 bodyYLocal)
-            const bodyYLocal = -bodyYOffset;
-            const connection_width = 12;
-            drawLine(Pf, { x: Pf.x, y: bodyYLocal }, '#64748b', connection_width, robotCtx);
-            drawLine(Pr, { x: Pr.x, y: bodyYLocal }, '#64748b', connection_width, robotCtx);
-
-            // 繪製馬達與齒輪箱
-            const bodyCenterPos = mapCoords({ x: gearboxShiftX, y: bodyYLocal });
-            const bp1 = mapCoords({ x: -S, y: bodyYLocal });
-            const bp2 = mapCoords({ x: S, y: bodyYLocal });
-            const bodyAngle = Math.atan2(bp2.y - bp1.y, bp2.x - bp1.x);
-            const customGearboxScale = (bodyYOffset * scale - 6) / 12.5;
-
-            robotCtx.save();
-            robotCtx.translate(bodyCenterPos.x, bodyCenterPos.y);
-            robotCtx.rotate(bodyAngle);
-            robotCtx.scale(customGearboxScale, customGearboxScale);
-
-            // 繪製馬達
-            robotCtx.save();
-            robotCtx.translate(27.0, -24.5);
-            robotCtx.fillStyle = motorLightGrey;
-            robotCtx.fillRect(0, 0, 10.5, 4);
-            robotCtx.fillRect(0, 16, 10.5, 4);
-            robotCtx.fillStyle = motorMediumGrey;
-            robotCtx.fillRect(0, 4, 10.5, 12);
-            robotCtx.fillStyle = '#ffffff';
-            robotCtx.fillRect(10.5, 0, 5, 20);
-            robotCtx.fillStyle = motorDarkGrey;
-            robotCtx.fillRect(10.5, 6.25, 3, 7.5);
-            robotCtx.fillStyle = '#f0f0f0';
-            robotCtx.fillRect(15.5, 5, 2.5, 10);
-            robotCtx.fillStyle = '#DCDCDC';
-            robotCtx.fillRect(18.0, 9, 1.0, 2);
-
-            robotCtx.strokeStyle = '#333333';
-            robotCtx.lineWidth = 0.1;
-            if (typeof motorSVGPath !== 'undefined') {
-                robotCtx.stroke(motorSVGPath);
-            }
-
-            const drawBronze = (bx, by, isBottom) => {
-                robotCtx.fillStyle = motorBronze;
-                robotCtx.strokeStyle = motorBronzeStroke;
-                robotCtx.lineWidth = 0.1;
-                robotCtx.beginPath();
-                if (!isBottom) {
-                    robotCtx.moveTo(bx, by); robotCtx.lineTo(bx, by - 3);
-                    robotCtx.arc(bx + 1, by - 3, 1, Math.PI, 0);
-                    robotCtx.lineTo(bx + 2, by);
-                } else {
-                    robotCtx.moveTo(bx, by); robotCtx.lineTo(bx, by + 3);
-                    robotCtx.arc(bx + 1, by + 3, 1, Math.PI, 0, true);
-                    robotCtx.lineTo(bx + 2, by);
-                }
-                robotCtx.closePath();
-                robotCtx.fill(); robotCtx.stroke();
-
-                robotCtx.fillStyle = '#ffffff';
-                robotCtx.beginPath();
-                if (!isBottom) {
-                    robotCtx.moveTo(bx + 0.5, by - 1); robotCtx.lineTo(bx + 0.5, by - 2.5);
-                    robotCtx.arc(bx + 1, by - 2.5, 0.5, Math.PI, 0);
-                    robotCtx.lineTo(bx + 1.5, by - 1);
-                } else {
-                    robotCtx.moveTo(bx + 0.5, by + 1); robotCtx.lineTo(bx + 0.5, by + 2.5);
-                    robotCtx.arc(bx + 1, by + 2.5, 0.5, Math.PI, 0, true);
-                    robotCtx.lineTo(bx + 1.5, by + 1);
-                }
-                robotCtx.closePath();
-                robotCtx.fill(); robotCtx.stroke();
+            const state = {
+                near, far, allFeetLocal, bodyRoll, bodyX, bodyY, scale, targetGy, cx,
+                AdminController, robotCanvas, offscreenCanvas,
+                Pf, Pr, C_crank, gearboxShiftX, bodyYOffset, S,
+                showGroundline, showFriction, validLines, invalidCOMLines, groundLine,
+                footStates, lastGroundedIndices, globalScale,
+                trajectoryTracker, cameraX,
+                legSVGPath, legSVG_h2y, currentCrankHoleY,
+                displayDist, displaySpeed, isStableSupport, comVerticalChange_Display,
+                footStiffness
             };
-            drawBronze(11.5, 6.25, false);
-            drawBronze(11.5, 13.75, true);
-            robotCtx.restore();
 
-            // 繪製齒輪箱
-            robotCtx.save();
-            robotCtx.translate(-25.0, -27);
-            robotCtx.fillStyle = gearboxFill;
-            robotCtx.strokeStyle = gearboxStroke;
-            robotCtx.lineWidth = 1.5 / customGearboxScale;
-            if (typeof gearboxSVGPath !== 'undefined') {
-                robotCtx.fill(gearboxSVGPath);
-                robotCtx.stroke(gearboxSVGPath);
-            }
-            const drawHoleDetail = (cx, cy) => {
-                robotCtx.beginPath(); robotCtx.arc(cx, cy, 3.5, 0, Math.PI * 2);
-                robotCtx.fillStyle = gearboxAnnulusFill; robotCtx.fill(); robotCtx.stroke();
-                robotCtx.beginPath(); robotCtx.arc(cx, cy, 1.5, 0, Math.PI * 2);
-                robotCtx.fillStyle = gearboxHoleFill; robotCtx.fill(); robotCtx.stroke();
-            };
-            drawHoleDetail(11.5, 12.5);
-            drawHoleDetail(25.0, 12.5);
-            robotCtx.restore();
-
-            robotCtx.restore();
-
-            // 繪製機身主橫梁結構
-            drawLine({ x: -S - 15, y: bodyYLocal }, { x: S + 15, y: bodyYLocal }, '#94a3b8', 12, robotCtx);
-            drawPoint(Pf, '#0f172a', 6, robotCtx);
-            drawPoint(Pr, '#0f172a', 6, robotCtx);
-            drawPoint(C_crank, '#ef4444', 7, robotCtx);
-
-            // 渲染 Near 側腳
-            renderSide(near, false, robotCtx);
-
-            // 繪製軌跡線條 (內部會判斷是否需要繪製)
-            trajectoryTracker.render(ctx, cameraX, scale, cx, targetGy);
-
-            // 繪製快取畫布至螢幕
-            ctx.drawImage(robotCanvas, 0, 0);
-
-            // --- 高亮著地足 (依據物理判定 lastGroundedIndices) ---
-            if (AdminController.overlayAlpha > 0.01) {
-                ctx.save();
-                ctx.globalAlpha = AdminController.overlayAlpha;
-                for (let i = 0; i < 6; i++) {
-                    if (lastGroundedIndices.includes(i)) {
-                        const f_local = allFeetLocal[i];
-                        drawPoint(f_local, '#ef4444', 5, ctx);
-                        const mp = mapCoords(f_local);
-                        ctx.beginPath();
-                        ctx.arc(mp.x, mp.y, 10, 0, Math.PI * 2);
-                        ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
-                    }
-                }
-
-                // --- 繪製重心 (COM) 與支撐分析指示器 ---
-                if (showGroundline) {
-                    // 重心在機身局部坐標系中位於 (0, -bodyYOffset)
-                    const comLocal = { x: 0, y: -bodyYOffset };
-                    const m_com = mapCoords(comLocal);
-
-                    // 決定線條顏色 (若有合法兩點支撐，畫綠色；若退化為單點，畫紅色)
-                    const isSinglePoint = (validLines.length === 0);
-                    const indicatorColor = isSinglePoint ? '#ef4444' : '#10b981';
-
-                    // 畫投影虛線到地面 (targetGy)
-                    ctx.beginPath();
-                    ctx.setLineDash([4, 4]);
-                    ctx.moveTo(m_com.x, m_com.y);
-                    ctx.lineTo(m_com.x, targetGy);
-                    ctx.strokeStyle = indicatorColor;
-                    ctx.lineWidth = 1.5;
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-
-                    // 在地面上標示投影點
-                    ctx.beginPath();
-                    ctx.arc(m_com.x, targetGy, 4, 0, Math.PI * 2);
-                    ctx.fillStyle = indicatorColor;
-                    ctx.fill();
-
-                    // 畫 COM 符號 (黃黑相間)
-                    const comRadius = 8;
-                    ctx.save();
-                    ctx.translate(m_com.x, m_com.y);
-                    ctx.beginPath();
-                    ctx.arc(0, 0, comRadius, 0, Math.PI * 2);
-                    ctx.strokeStyle = '#000000';
-                    ctx.lineWidth = 1.5;
-                    ctx.stroke();
-                    for (let i = 0; i < 4; i++) {
-                        ctx.beginPath();
-                        ctx.moveTo(0, 0);
-                        ctx.arc(0, 0, comRadius, i * Math.PI / 2, (i + 1) * Math.PI / 2);
-                        ctx.closePath();
-                        ctx.fillStyle = (i === 0 || i === 2) ? '#facc15' : '#0f172a';
-                        ctx.fill();
-                        ctx.stroke();
-                    }
-                    ctx.restore();
-
-                    // 標註 COM 文字與 X 座標
-                    const rx_com = bodyYOffset * Math.sin(bodyRoll);
-                    const comX_unit = rx_com / globalScale;
-                    ctx.fillStyle = '#0f172a';
-                    ctx.font = 'bold 11px system-ui';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`COM (x: ${comX_unit.toFixed(2)})`, m_com.x, m_com.y - 12);
-
-                    // 標註中間腳切點的 X 座標
-                    const rx_near_m = near.foot_m.x * Math.cos(bodyRoll) - near.foot_m.y * Math.sin(bodyRoll);
-                    const near_m_x = rx_near_m / globalScale;
-                    const mp_near_m = mapCoords(near.foot_m);
-                    ctx.fillStyle = '#b45309';
-                    ctx.font = 'bold 10px system-ui';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`Near M (x: ${near_m_x.toFixed(2)})`, mp_near_m.x, mp_near_m.y + 15);
-
-                    const rx_far_m = far.foot_m.x * Math.cos(bodyRoll) - far.foot_m.y * Math.sin(bodyRoll);
-                    const far_m_x = rx_far_m / globalScale;
-                    const mp_far_m = mapCoords(far.foot_m);
-                    ctx.fillStyle = '#475569';
-                    ctx.font = 'bold 10px system-ui';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`Far M (x: ${far_m_x.toFixed(2)})`, mp_far_m.x, mp_far_m.y - 12);
-
-                    // 繪製支撐區間 (Support Range / Base) 幾何指示
-                    if (groundLine) {
-                        const mp1 = mapCoords(groundLine.p1);
-                        const mp2 = mapCoords(groundLine.p2);
-                        const minX = Math.min(mp1.x, mp2.x);
-                        const maxX = Math.max(mp1.x, mp2.x);
-
-                        // 在地面上畫出綠色支撐線段
-                        ctx.beginPath();
-                        ctx.moveTo(minX, targetGy);
-                        ctx.lineTo(maxX, targetGy);
-                        ctx.strokeStyle = '#10b981';
-                        ctx.lineWidth = 6;
-                        ctx.lineCap = 'round';
-                        ctx.stroke();
-
-                        // 標示 "Support Base" 文字
-                        ctx.fillStyle = '#10b981';
-                        ctx.font = 'bold 11px system-ui';
-                        ctx.textAlign = 'center';
-                        const midX = (minX + maxX) / 2;
-                        ctx.fillText('支撐區間 (包含 COM)', midX, targetGy + 15);
-                    } else {
-                        // 單點支撐狀態：畫出被排除的兩點線 (invalidCOMLines)
-                        invalidCOMLines.forEach((line) => {
-                            const mp1 = mapCoords(line.p1);
-                            const mp2 = mapCoords(line.p2);
-
-                            // 畫紅色虛線段，表示被排除的支撐區間
-                            ctx.beginPath();
-                            ctx.moveTo(mp1.x, targetGy);
-                            ctx.lineTo(mp2.x, targetGy);
-                            ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
-                            ctx.lineWidth = 4;
-                            ctx.stroke();
-
-                            // 在地面投影端點畫小紅點
-                            ctx.beginPath();
-                            ctx.arc(mp1.x, targetGy, 3, 0, Math.PI * 2);
-                            ctx.fillStyle = '#ef4444';
-                            ctx.fill();
-                            ctx.beginPath();
-                            ctx.arc(mp2.x, targetGy, 3, 0, Math.PI * 2);
-                            ctx.fillStyle = '#ef4444';
-                            ctx.fill();
-                        });
-
-                        // 指示為什麼是單點支撐的警示文字
-                        ctx.fillStyle = '#ef4444';
-                        ctx.font = 'bold 11px system-ui';
-                        ctx.textAlign = 'center';
-                        ctx.fillText('重心未落在任何兩點支撐區間內！', m_com.x, targetGy + 15);
-                        ctx.font = '10px system-ui';
-                        ctx.fillText('-> 強制退化為單點支撐 (幾何最低點)', m_com.x, targetGy + 28);
-                    }
-                }
-
-                // --- 繪製動態物理指示器 ---
-                if (showFriction) {
-                    for (let i = 0; i < 6; i++) {
-                        const state = footStates[i];
-                        const f_local = allFeetLocal[i];
-                        const mp = mapCoords(f_local);
-                        // 遠側腳 (i >= 3) 的指示器移到機身上方，避免與近側腳重疊
-                        const yOff = (i >= 3) ? 180 : 45;
-
-                        let mainColor;
-                        let dispF = 0, dispMax = 0, dispSlip = 0, dispW = 0, dispSkid = 0;
-
-                        if (state.isGrounded) {
-                            const isSlipping = Math.abs(state.F_x) >= state.F_max * 0.99 && state.F_max > 0;
-                            mainColor = isSlipping ? '#ef4444' : '#3b82f6'; // 打滑紅，抓地藍
-                            dispF = Math.abs(state.F_x);
-                            dispMax = state.F_max;
-                            dispSlip = state.slipDistance;
-                            dispSkid = state.skid;
-                            dispW = state.weight * 100;
-                        } else {
-                            mainColor = 'rgba(148, 163, 184, 0.5)'; // 騰空狀態：半透明灰
-                        }
-
-                        // 繪製摩擦力箭頭 (僅觸地且有施力時)
-                        if (state.isGrounded) {
-                            // 動態計算視覺縮放比例，確保在不同質量下都能清楚看到長度差異
-                            const visualScale = 15.0; // 力轉為像素的縮放比例
-                            const forceVec = state.F_x * visualScale;
-
-                            if (Math.abs(forceVec) > 1) {
-                                ctx.beginPath();
-                                ctx.moveTo(mp.x, mp.y - yOff);
-                                ctx.lineTo(mp.x + forceVec, mp.y - yOff);
-                                ctx.strokeStyle = mainColor;
-                                ctx.lineWidth = 3;
-                                ctx.stroke();
-
-                                ctx.beginPath();
-                                ctx.arc(mp.x + forceVec, mp.y - yOff, 4, 0, Math.PI * 2);
-                                ctx.fillStyle = mainColor;
-                                ctx.fill();
-                            }
-                        }
-
-                        // 標示物理數據文字
-                        ctx.fillStyle = mainColor;
-                        ctx.font = 'bold 11px system-ui';
-                        ctx.textAlign = 'center';
-
-                        // 第1行：摩擦力 / 最大摩擦力
-                        ctx.fillText(`F: ${dispF.toFixed(1)} / Max: ${dispMax.toFixed(1)}`, mp.x, mp.y - yOff - 35);
-                        // 第2行：滑動變形量 / 變形極限 | 法向力權重
-                        const maxSlipLimit = state.isGrounded ? (state.F_max / footStiffness) : 0;
-                        ctx.fillText(`Def: ${Math.abs(dispSlip).toFixed(2)}/${maxSlipLimit.toFixed(2)} | W: ${dispW.toFixed(0)}%`, mp.x, mp.y - yOff - 22);
-                        // 第3行：總計真實打滑距離
-                        ctx.fillText(`Skid: ${dispSkid.toFixed(2)}`, mp.x, mp.y - yOff - 9);
-                    }
-                }
-
-                ctx.restore();
-            }
+            renderer.renderScene(state);
 
         } else {
             window.simulationErrorMsg = '幾何約束衝突！請嘗試減小曲柄半徑。';
@@ -1226,10 +721,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 
         // 8. 繪製統計數據面板 (僅在管理員模式下顯示)
         if (AdminController.overlayAlpha > 0.01) {
-            ctx.save();
-            ctx.globalAlpha = AdminController.overlayAlpha;
-            drawOverlayStats();
-            ctx.restore();
+            // drawOverlayStats is now handled by Renderer
         }
 
         // 紀錄數據用於 AI 診斷
@@ -1255,92 +747,6 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
     }
 }
 
-
-function drawOverlayStats() {
-    const w = 260;
-    const h = 230; // 增加面板高度以容納 COM 指示
-    const x = canvas.width - w - 20;
-    const y = 20;
-
-
-    // 1. Background with rounded corners
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-    if (ctx.roundRect) {
-        ctx.beginPath();
-        ctx.roundRect(x, y, w, h, 12);
-        ctx.fill();
-    } else {
-        ctx.fillRect(x, y, w, h);
-    }
-
-    // 2. Accent Bar
-    ctx.fillStyle = '#3b82f6';
-    ctx.fillRect(x, y + 10, 4, h - 20);
-
-    // 3. Title
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = 'bold 15px system-ui';
-    ctx.textAlign = 'left';
-    ctx.fillText('單腳觸地推進數據', x + 20, y + 35);
-
-    // 4. Data Rows (Left Label, Right Value)
-    const drawRow = (label, value, color, ty) => {
-        ctx.textAlign = 'left';
-        ctx.font = '14px system-ui';
-        ctx.fillStyle = '#94a3b8';
-        ctx.fillText(label, x + 20, ty);
-
-        ctx.textAlign = 'right';
-        ctx.font = 'bold 14px "JetBrains Mono", monospace';
-        ctx.fillStyle = color;
-        ctx.fillText(value, x + w - 20, ty);
-    };
-
-    // 只顯示最穩定且具備比較價值的「週期平均速度」
-    // 這個數值代表機器人每走完完整一步的真實平均推進能力，不會隨步伐抖動，最適合用來比較不同連桿長度的效能
-    drawRow('每圈前進距離:', `${displayDist.toFixed(1)} mm`, '#38bdf8', y + 68);
-    drawRow('每秒前進速度:', `${displaySpeed.toFixed(1)} mm/s`, '#34d399', y + 93);
-    drawRow('地面支撐狀態:', isStableSupport ? '穩定支撐' : '失去平衡', isStableSupport ? '#10b981' : '#ef4444', y + 118);
-    drawRow('COM 重心起伏:', `${comVerticalChange_Display.toFixed(1)} mm`, '#facc15', y + 143);
-
-    // 5. Grounded Foot Indicators
-    ctx.textAlign = 'left';
-    ctx.font = 'bold 13px system-ui';
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillText('觸地狀態 (綠:觸地/灰:懸空)', x + 20, y + 167);
-
-    const startY = y + 187;
-    const startY2 = y + 207;
-
-    const drawIndicator = (idx, label, px, py) => {
-        const isGrounded = lastGroundedIndices.includes(idx);
-        ctx.beginPath();
-        ctx.arc(px, py, 7, 0, Math.PI * 2);
-        ctx.fillStyle = isGrounded ? '#10b981' : '#475569';
-        ctx.fill();
-
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 9px system-ui';
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(label, px, py + 3);
-    };
-
-    ctx.textAlign = 'left';
-    ctx.font = '11px system-ui';
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('遠端 Far', x + 20, startY + 3);
-    drawIndicator(3, 'F', x + 100, startY);
-    drawIndicator(4, 'M', x + 140, startY);
-    drawIndicator(5, 'R', x + 180, startY);
-
-    ctx.textAlign = 'left';
-    ctx.font = '11px system-ui';
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('近端 Near', x + 20, startY2 + 3);
-    drawIndicator(0, 'F', x + 100, startY2);
-    drawIndicator(1, 'M', x + 140, startY2);
-    drawIndicator(2, 'R', x + 180, startY2);
-}
 
 function animate() {
     let now = performance.now();
@@ -1378,7 +784,7 @@ function animate() {
                 // 將畫布座標系的數據轉換為物理單位 (mm) 並更新給 UI 顯示
                 displaySpeed = cycleAvgSpeed / globalScale;
                 displayDist = dx / globalScale;
-                
+
                 if (maxComY_Cycle !== -Infinity && minComY_Cycle !== Infinity) {
                     comVerticalChange_Display = (maxComY_Cycle - minComY_Cycle) / globalScale;
                 }
@@ -1593,7 +999,7 @@ function resetParameters() {
     Pr.x = S;
     currentCrankHoleY = 15.2;
     R = crankDistances[0];
-    
+
     trajectoryTracker.clear(); // 重置時清空軌跡
 
     // 2. Update UI Sliders
@@ -1683,7 +1089,7 @@ const MAX_ANALYTICS_WINDOW = 120; // 2 seconds at 60fps
 export function getSimplifiedAnalytics() {
     const recentHops = hopYHistory.slice(-MAX_ANALYTICS_WINDOW);
     const hopRange = recentHops.length > 0 ? (Math.max(...recentHops) - Math.min(...recentHops)) : 0;
-    
+
     // 取出最新的全域物理狀態
     const hasConflict = isClashing;
     const currentSpeed = (typeof displaySpeed !== 'undefined') ? parseFloat(displaySpeed.toFixed(1)) : 0;
@@ -1779,7 +1185,7 @@ if (toggleChronoViewBtn && chronoDisplayCanvas) {
             toggleChronoViewBtn.classList.add('active');
             simCanvas.style.display = 'none';
             chronoDisplayCanvas.style.display = 'block';
-            
+
             // Render the current state of chronoRecorder's canvas
             chronoDisplayCtx.fillStyle = '#1e1e1e';
             chronoDisplayCtx.fillRect(0, 0, chronoDisplayCanvas.width, chronoDisplayCanvas.height);
@@ -1789,7 +1195,7 @@ if (toggleChronoViewBtn && chronoDisplayCanvas) {
             const paramsJson = JSON.stringify(window.getSimplifiedAnalytics ? window.getSimplifiedAnalytics() : {});
             chronoRecorder.cachedImage = null;
             chronoRecorder.cachedParamSignature = null;
-            
+
             if (!isPlaying) {
                 const toggleBtn = document.getElementById('toggleBtn');
                 if (toggleBtn) toggleBtn.click();
@@ -1807,7 +1213,7 @@ if (toggleChronoViewBtn && chronoDisplayCanvas) {
 
 // Hook into requestAnimationFrame to copy chronoRecorder's canvas to chronoDisplayCanvas while recording
 const originalRequestAnimationFrame = window.requestAnimationFrame;
-window.requestAnimationFrame = function(callback) {
+window.requestAnimationFrame = function (callback) {
     return originalRequestAnimationFrame((time) => {
         if (isChronoViewMode && chronoDisplayCtx) {
             // Continuously draw the chrono recorder canvas so the user sees the overlapping updates

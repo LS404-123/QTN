@@ -4,9 +4,11 @@
 import { rodSVGPath, gearboxSVGPath, crankSVGPath, motorSVGPath } from './svgs.js';
 import { BGScroller } from './bg_scroll.js';
 import { ChronoRecorder } from './chrono_recorder.js';
+import { TrajectoryTracker } from './trajectory.js';
 
 // Initialize ChronoRecorder with 6 frames per cycle (60 degrees)
 const chronoRecorder = new ChronoRecorder(1120, 630, 6);
+const trajectoryTracker = new TrajectoryTracker(400); // 新增軌跡追蹤器
 let legSVGPath = null; // 動態更新的腳部路徑
 // --- Speed Visualization Configuration ---
 const speedVizConfig = {
@@ -171,7 +173,7 @@ updateCrankPosition();
 let theta = 0;
 let phaseDiff = Math.PI; // 相位差預設 180 度 (Half-cycle out of phase)
 let isPlaying = false; // 預設停止播放，使機器人靜態站立
-let showPaths = false;
+
 let simSpeed = -0.1;
 let gravityScale = 1.0;
 
@@ -215,8 +217,6 @@ let isSlowMo = false;
 let showGroundline = true;
 let showFriction = true;
 
-let paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
-const maxPathLen = 150;
 
 let isLooping = false;
 let playOnePeriod = false;
@@ -366,7 +366,11 @@ export function getEllipticFootPoint(P_top, P_bottom, m = 0) {
     const dx_cp = -dx_rel_top;
     const dy_cp = -dy_rel_top;
 
-    return { x: Cx + dx_cp, y: Cy + dy_cp, cx: Cx, cy: Cy, rot_local: rot };
+    // 計算沿著腿部中心線到底部的固定端點
+    const tip_x = P_bottom.x + (dx / L_curr) * L_foot;
+    const tip_y = P_bottom.y + (dy / L_curr) * L_foot;
+
+    return { x: Cx + dx_cp, y: Cy + dy_cp, cx: Cx, cy: Cy, tip_x, tip_y, rot_local: rot };
 }
 
 export function getLegPositions(angle, groundM = 0) {
@@ -426,22 +430,6 @@ function drawLine(p1, p2, color, width, targetCtx = ctx) {
     targetCtx.lineWidth = width;
     targetCtx.lineCap = 'round';
     targetCtx.stroke();
-}
-
-function drawPath(pathArray, color, dash, includeHop = true) {
-    if (!showPaths || pathArray.length < 2) return;
-    ctx.beginPath();
-    const start = mapCoords(pathArray[0], includeHop);
-    ctx.moveTo(start.x, start.y);
-    for (let i = 1; i < pathArray.length; i++) {
-        const pt = mapCoords(pathArray[i], includeHop);
-        ctx.lineTo(pt.x, pt.y);
-    }
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    if (dash) ctx.setLineDash(dash);
-    ctx.stroke();
-    ctx.setLineDash([]);
 }
 
 function drawPoint(p, color, radius, targetCtx = ctx, includeHop = true) {
@@ -880,6 +868,9 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
                 y: bodyY + f.x * Math.sin(bodyRoll) + f.y * Math.cos(bodyRoll)
             }));
 
+            // 交由 trajectoryTracker 內部處理是否要紀錄以及轉換世界座標
+            trajectoryTracker.record(allFeetLocal, bodyX, bodyY, bodyRoll, isPlaying, bodyVelX);
+
             // 3. 繪製足部在地面上的陰影 (將 world 傳參改為 local 傳參)
             allFeetLocal.forEach(f => drawFootShadow(f));
 
@@ -1010,6 +1001,9 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
 
             // 渲染 Near 側腳
             renderSide(near, false, robotCtx);
+
+            // 繪製軌跡線條 (內部會判斷是否需要繪製)
+            trajectoryTracker.render(ctx, cameraX, scale, cx, targetGy);
 
             // 繪製快取畫布至螢幕
             ctx.drawImage(robotCanvas, 0, 0);
@@ -1463,6 +1457,9 @@ document.getElementById('toggleFrictionBtn').addEventListener('click', (e) => {
     triggerUpdate();
 });
 
+// 綁定軌跡相關的 UI (Switch 和 Clear 按鈕)
+trajectoryTracker.bindUI('showPathsCheck', 'clearBtn', triggerUpdate);
+
 document.getElementById('toggleBtn').addEventListener('click', (e) => {
     isPlaying = !isPlaying;
     playOnePeriod = false;
@@ -1479,16 +1476,6 @@ document.getElementById('periodBtn').addEventListener('click', () => {
     playOnePeriod = true;
     accumulatedTheta = 0;
     document.getElementById('toggleBtn').innerText = "暫停自動播放";
-    triggerUpdate();
-});
-
-document.getElementById('clearBtn').addEventListener('click', () => {
-    paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
-    renderFrame(theta, false);
-});
-
-document.getElementById('showPathsCheck').addEventListener('change', (e) => {
-    showPaths = e.target.checked;
     triggerUpdate();
 });
 
@@ -1557,7 +1544,6 @@ document.getElementById('phaseSlider').addEventListener('input', (e) => {
     let deg = parseInt(e.target.value);
     phaseDiff = (deg / 180) * Math.PI;
     document.getElementById('phaseVal').innerText = deg + '°';
-    paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
     for (let i = 0; i < 6; i++) footStates[i].isGrounded = false;
     triggerUpdate();
 });
@@ -1567,7 +1553,6 @@ const setupSlider = (id, valId, callback) => {
         const val = parseFloat(e.target.value);
         document.getElementById(valId).innerText = val;
         callback(val * globalScale); // Apply globalScale here
-        paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
         for (let i = 0; i < 6; i++) footStates[i].isGrounded = false;
         triggerUpdate();
     });
@@ -1585,7 +1570,6 @@ setupSlider('lFootSlider', 'lFootVal', (v) => {
 setupSlider('gearboxShiftSlider', 'gearboxShiftVal', (v) => {
     gearboxShiftX = v / globalScale;
     updateCrankPosition(); // Sync physical pivot with visual gearbox
-    paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
     triggerUpdate();
 });
 
@@ -1593,7 +1577,6 @@ setupSlider('sSlider', 'sVal', (v) => {
     S = v;
     Pf.x = -S;
     Pr.x = S;
-    paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
     triggerUpdate();
 });
 
@@ -1610,6 +1593,8 @@ function resetParameters() {
     Pr.x = S;
     currentCrankHoleY = 15.2;
     R = crankDistances[0];
+    
+    trajectoryTracker.clear(); // 重置時清空軌跡
 
     // 2. Update UI Sliders
     document.getElementById('speedSlider').value = 0.1;
@@ -1640,7 +1625,6 @@ function resetParameters() {
     // 4. Update internal states and visual assets
     updateLegSVGPath();
     updateCrankPosition();
-    paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
 
     // 重設正向物理狀態
     bodyX = 0;
@@ -1682,7 +1666,6 @@ for (let i = 1; i <= 4; i++) {
                 window.onSliderChanged('crankHole', i);
             }
 
-            paths = { near: { f: [], m: [], r: [] }, far: { f: [], m: [], r: [] } };
             triggerUpdate();
         });
 

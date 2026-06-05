@@ -23,6 +23,7 @@ const ChatManager = {
         this.logCounter = document.getElementById('logCounter');
         this.prevLogBtn = document.getElementById('prevLog');
         this.nextLogBtn = document.getElementById('nextLog');
+        this.suggestedOptionsContainer = document.getElementById('suggestedOptionsContainer');
 
         if (!this.chatHistory || !this.userInput || !this.sendBtn) {
             console.error("[ChatManager] Failed to find UI elements!");
@@ -84,40 +85,35 @@ const ChatManager = {
         `;
 
         // Stage 3: 動態按鈕渲染
-        if (options && options.length > 0) {
-            const optionsContainer = document.createElement('div');
-            optionsContainer.className = 'msg-options';
-            optionsContainer.style.display = 'flex';
-            optionsContainer.style.flexDirection = 'column';
-            optionsContainer.style.gap = '8px';
-            optionsContainer.style.marginTop = '12px';
-
-            options.forEach(optText => {
-                const btn = document.createElement('button');
-                btn.className = 'suggested-reply-btn';
-                // Inline styles for fast prototyping
-                btn.style.padding = '8px 14px';
-                btn.style.borderRadius = '20px';
-                btn.style.border = '1px solid rgba(74, 222, 128, 0.6)';
-                btn.style.background = 'rgba(74, 222, 128, 0.1)';
-                btn.style.color = '#e2e8f0';
-                btn.style.cursor = 'pointer';
-                btn.style.textAlign = 'left';
-                btn.style.fontSize = '0.9rem';
-                btn.style.transition = 'all 0.2s';
-                
-                btn.onmouseover = () => btn.style.background = 'rgba(74, 222, 128, 0.3)';
-                btn.onmouseout = () => btn.style.background = 'rgba(74, 222, 128, 0.1)';
-                
-                btn.innerText = optText;
-                btn.onclick = () => {
-                    const allBtns = optionsContainer.querySelectorAll('button');
-                    allBtns.forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
-                    this.handleSendMessage(optText.replace('💬', '').trim());
-                };
-                optionsContainer.appendChild(btn);
-            });
-            msgDiv.querySelector('.msg-content').appendChild(optionsContainer);
+        if (this.suggestedOptionsContainer) {
+            this.suggestedOptionsContainer.innerHTML = ''; // 每次有新訊息先清空
+            if (options && options.length > 0) {
+                options.forEach(optText => {
+                    const btn = document.createElement('button');
+                    btn.className = 'suggested-reply-btn';
+                    // Inline styles for fast prototyping
+                    btn.style.padding = '8px 14px';
+                    btn.style.borderRadius = '20px';
+                    btn.style.border = '1px solid rgba(74, 222, 128, 0.8)';
+                    btn.style.background = 'rgba(74, 222, 128, 0.15)';
+                    btn.style.color = '#166534'; // 深綠色，確保在淺色背景上顯示清楚
+                    btn.style.fontWeight = '600';
+                    btn.style.cursor = 'pointer';
+                    btn.style.textAlign = 'left';
+                    btn.style.fontSize = '0.9rem';
+                    btn.style.transition = 'all 0.2s';
+                    
+                    btn.onmouseover = () => btn.style.background = 'rgba(74, 222, 128, 0.3)';
+                    btn.onmouseout = () => btn.style.background = 'rgba(74, 222, 128, 0.15)';
+                    
+                    btn.innerText = optText;
+                    btn.onclick = () => {
+                        this.suggestedOptionsContainer.innerHTML = '';
+                        this.handleSendMessage(optText.replace('💬', '').trim());
+                    };
+                    this.suggestedOptionsContainer.appendChild(btn);
+                });
+            }
         }
 
         this.chatHistory.appendChild(msgDiv);
@@ -150,6 +146,11 @@ const ChatManager = {
     async handleSendMessage(forcedText = null) {
         let text = forcedText || this.userInput.value.trim();
         if (!text || this.isWaiting) return;
+
+        // 當使用者自己送出時，也清空選項
+        if (this.suggestedOptionsContainer && !forcedText) {
+            this.suggestedOptionsContainer.innerHTML = '';
+        }
 
         // Stage 4: 輸入驗證與防溢位 (Input Sanitization)
         if (text.length > 100) {

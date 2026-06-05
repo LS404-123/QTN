@@ -267,6 +267,9 @@ let lastGroundedIndices = []; // 追蹤觸地的腳掌索引
 let displayDist = 0;
 let displayTime = 0;
 let displaySpeed = 0;
+let speedHistory = [];
+let displayAvg10Speed = 0;
+let isAvgSpeedStable = true;
 let smoothedSpeed = 0;
 let cycleAvgSpeed = 0;
 let lastCycleX = 0;
@@ -724,7 +727,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
                 footStates, lastGroundedIndices, globalScale,
                 trajectoryTracker, cameraX,
                 legSVGPath, legSVG_h2y, currentCrankHoleY,
-                displayDist, displaySpeed, isStableSupport, comVerticalChange_Display,
+                displayDist, displaySpeed, displayAvg10Speed, isAvgSpeedStable, isStableSupport, comVerticalChange_Display,
                 footStiffness
             };
 
@@ -805,6 +808,13 @@ function animate() {
                 // 將畫布座標系的數據轉換為物理單位 (mm) 並更新給 UI 顯示
                 displaySpeed = cycleAvgSpeed / globalScale;
                 displayDist = dx / globalScale;
+
+                speedHistory.push(newAvg / globalScale);
+                if (speedHistory.length > 10) speedHistory.shift();
+                displayAvg10Speed = speedHistory.reduce((a, b) => a + b, 0) / speedHistory.length;
+                const maxSpd = Math.max(...speedHistory);
+                const minSpd = Math.min(...speedHistory);
+                isAvgSpeedStable = speedHistory.length < 3 || (maxSpd - minSpd) < Math.max(0.10 * displayAvg10Speed, 1.5);
 
                 if (maxComY_Cycle !== -Infinity && minComY_Cycle !== Infinity) {
                     comVerticalChange_Display = (maxComY_Cycle - minComY_Cycle) / globalScale;

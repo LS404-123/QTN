@@ -159,7 +159,7 @@ export class HexapodRenderer {
     drawOverlayStats(state) {
         const { ctx, canvas } = this;
         const w = 260;
-        const h = 230; 
+        const h = 255; 
         const x = canvas.width - w - 20;
         const y = 20;
 
@@ -193,17 +193,18 @@ export class HexapodRenderer {
         };
 
         drawRow('每圈前進距離:', `${state.displayDist.toFixed(1)} mm`, '#38bdf8', y + 68);
-        drawRow('每秒前進速度:', `${state.displaySpeed.toFixed(1)} mm/s`, '#34d399', y + 93);
-        drawRow('地面支撐狀態:', state.isStableSupport ? '穩定支撐' : '失去平衡', state.isStableSupport ? '#10b981' : '#ef4444', y + 118);
-        drawRow('COM 重心起伏:', `${state.comVerticalChange_Display.toFixed(1)} mm`, '#facc15', y + 143);
+        drawRow('每秒前進速度 (MAV):', `${state.displaySpeed.toFixed(1)} mm/s`, '#34d399', y + 93);
+        drawRow('十週期待均速 (10-avg):', `${state.displayAvg10Speed.toFixed(1)} mm/s`, state.isAvgSpeedStable ? '#10b981' : '#ef4444', y + 118);
+        drawRow('地面支撐狀態:', state.isStableSupport ? '穩定支撐' : '失去平衡', state.isStableSupport ? '#10b981' : '#ef4444', y + 143);
+        drawRow('COM 重心起伏:', `${state.comVerticalChange_Display.toFixed(1)} mm`, '#facc15', y + 168);
 
         ctx.textAlign = 'left';
         ctx.font = 'bold 13px system-ui';
         ctx.fillStyle = '#f8fafc';
-        ctx.fillText('觸地狀態 (綠:觸地/灰:懸空)', x + 20, y + 167);
+        ctx.fillText('觸地狀態 (綠:觸地/灰:懸空)', x + 20, y + 192);
 
-        const startY = y + 187;
-        const startY2 = y + 207;
+        const startY = y + 212;
+        const startY2 = y + 232;
 
         const drawIndicator = (idx, label, px, py) => {
             const isGrounded = state.lastGroundedIndices.includes(idx);

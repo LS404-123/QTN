@@ -5,8 +5,8 @@ import { rodSVGPath, gearboxSVGPath, crankSVGPath, motorSVGPath } from './svgs.j
 import { BGScroller } from './bg_scroll.js';
 import { ChronoRecorder } from './chrono_recorder.js';
 
-// Initialize ChronoRecorder with 5 frames per cycle (72 degrees)
-const chronoRecorder = new ChronoRecorder(1120, 630, 5);
+// Initialize ChronoRecorder with 6 frames per cycle (60 degrees)
+const chronoRecorder = new ChronoRecorder(1120, 630, 6);
 let legSVGPath = null; // 動態更新的腳部路徑
 // --- Speed Visualization Configuration ---
 const speedVizConfig = {
@@ -1219,10 +1219,11 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             }
 
         } else {
+            window.simulationErrorMsg = '幾何約束衝突！請嘗試減小曲柄半徑。';
             ctx.fillStyle = '#f87171';
             ctx.font = 'bold 22px system-ui';
             ctx.textAlign = 'center';
-            ctx.fillText('幾何約束衝突！請嘗試減小曲柄半徑。', canvas.width / 2, canvas.height / 2);
+            ctx.fillText(window.simulationErrorMsg, canvas.width / 2, canvas.height / 2);
         }
 
         // 8. 繪製統計數據面板 (僅在管理員模式下顯示)
@@ -1239,10 +1240,12 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         }
 
         // Live Trailing Capture Hook for Chronophotography
-        if (chronoRecorder.isRecording) {
-            chronoRecorder.captureFrameHook(currentTheta, robotCanvas, cameraX, scale);
+        if (chronoRecorder.isRecording && !isClashing) {
+            window.simulationErrorMsg = null;
+            chronoRecorder.captureFrameHook(currentTheta, robotCanvas, cameraX, scale, targetGy);
         }
     } catch (err) {
+        window.simulationErrorMsg = "Render Error: " + err.message;
         console.error("Render error in hexapod sim:", err);
         ctx.save();
         ctx.fillStyle = '#ef4444';
@@ -1749,14 +1752,74 @@ animate();
 // 將需要全域存取的函數掛載到 window
 window.getSimplifiedAnalytics = getSimplifiedAnalytics;
 window.getIsPlaying = () => isPlaying;
-window.startChronoRecording = (paramsJson) => {
-    const promise = chronoRecorder.start(paramsJson, cameraX, theta, isPlaying);
+window.startChronoRecording = (paramsJson, isContinuous = false) => {
+    const promise = chronoRecorder.start(paramsJson, cameraX, theta, isPlaying, isContinuous);
     // Force the first frame capture immediately if recording just started
     if (chronoRecorder.isRecording) {
-        chronoRecorder.doCapture(robotCanvas, cameraX, scale);
+        chronoRecorder.doCapture(robotCanvas, cameraX, scale, targetGy);
     }
     return promise;
 };
 
+// --- Chronophotography Mode ---
+let isChronoViewMode = false;
+const chronoDisplayCanvas = document.getElementById('chronoDisplay');
+const chronoDisplayCtx = chronoDisplayCanvas ? chronoDisplayCanvas.getContext('2d') : null;
 
+const toggleChronoViewBtn = document.getElementById('toggleChronoViewBtn');
 
+if (toggleChronoViewBtn && chronoDisplayCanvas) {
+    toggleChronoViewBtn.addEventListener('click', () => {
+        isChronoViewMode = !isChronoViewMode;
+        const simCanvas = document.getElementById('simCanvas');
+
+        if (isChronoViewMode) {
+            toggleChronoViewBtn.classList.add('active');
+            simCanvas.style.display = 'none';
+            chronoDisplayCanvas.style.display = 'block';
+            
+            // Render the current state of chronoRecorder's canvas
+            chronoDisplayCtx.fillStyle = '#1e1e1e';
+            chronoDisplayCtx.fillRect(0, 0, chronoDisplayCanvas.width, chronoDisplayCanvas.height);
+            chronoDisplayCtx.drawImage(chronoRecorder.chronoCanvas, 0, 0);
+
+            // Auto start continuous recording
+            const paramsJson = JSON.stringify(window.getSimplifiedAnalytics ? window.getSimplifiedAnalytics() : {});
+            chronoRecorder.cachedImage = null;
+            chronoRecorder.cachedParamSignature = null;
+            
+            if (!isPlaying) {
+                const toggleBtn = document.getElementById('toggleBtn');
+                if (toggleBtn) toggleBtn.click();
+            }
+
+            window.startChronoRecording(paramsJson, true);
+        } else {
+            toggleChronoViewBtn.classList.remove('active');
+            simCanvas.style.display = 'block';
+            chronoDisplayCanvas.style.display = 'none';
+            chronoRecorder.isRecording = false; // stop continuous recording
+        }
+    });
+}
+
+// Hook into requestAnimationFrame to copy chronoRecorder's canvas to chronoDisplayCanvas while recording
+const originalRequestAnimationFrame = window.requestAnimationFrame;
+window.requestAnimationFrame = function(callback) {
+    return originalRequestAnimationFrame((time) => {
+        if (isChronoViewMode && chronoDisplayCtx) {
+            // Continuously draw the chrono recorder canvas so the user sees the overlapping updates
+            chronoDisplayCtx.drawImage(chronoRecorder.chronoCanvas, 0, 0);
+
+            if (window.simulationErrorMsg) {
+                chronoDisplayCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                chronoDisplayCtx.fillRect(0, 0, chronoDisplayCanvas.width, chronoDisplayCanvas.height);
+                chronoDisplayCtx.fillStyle = '#f87171';
+                chronoDisplayCtx.font = 'bold 22px system-ui';
+                chronoDisplayCtx.textAlign = 'center';
+                chronoDisplayCtx.fillText(window.simulationErrorMsg, chronoDisplayCanvas.width / 2, chronoDisplayCanvas.height / 2);
+            }
+        }
+        callback(time);
+    });
+};

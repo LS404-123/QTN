@@ -15,7 +15,10 @@
 <body>
     <div class="app-container control-panel">
         <header>
-            <h2>進階機械人姿態模擬器</h2>
+            <div class="header-actions" style="margin-right: 12px;">
+                <button id="toggleChronoViewBtn" class="btn-secondary admin-only" style="white-space: nowrap;">軌跡攝影模式</button>
+            </div>
+            <h2 style="margin-right: auto;">進階機械人姿態模擬器</h2>
             <div class="header-actions">
                 <button id="toggleGroundlineBtn" class="btn-secondary active admin-only" style="white-space: nowrap;">支撐區間指示</button>
                 <button id="toggleFrictionBtn" class="btn-secondary active admin-only" style="white-space: nowrap;">物理摩擦指示</button>
@@ -25,8 +28,9 @@
 
         <main class="bento-grid">
             <!-- Hero Canvas Area -->
-            <section class="bento-item hero-canvas">
+            <section class="bento-item hero-canvas" style="position: relative;">
                 <canvas id="simCanvas" width="1120" height="630"></canvas>
+                <canvas id="chronoDisplay" width="1120" height="630" style="display: none; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; border-radius: 20px;"></canvas>
             </section>
 
             <!-- Side Panel Container (Chat + Log Toggle) -->

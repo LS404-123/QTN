@@ -814,7 +814,7 @@ function animate() {
                 displayAvg10Speed = speedHistory.reduce((a, b) => a + b, 0) / speedHistory.length;
                 const maxSpd = Math.max(...speedHistory);
                 const minSpd = Math.min(...speedHistory);
-                isAvgSpeedStable = speedHistory.length < 3 || (maxSpd - minSpd) < Math.max(0.10 * displayAvg10Speed, 1.5);
+                isAvgSpeedStable = speedHistory.length < 3 || (maxSpd - minSpd) < Math.max(0.05 * displayAvg10Speed, 0.5);
 
                 if (maxComY_Cycle !== -Infinity && minComY_Cycle !== Infinity) {
                     comVerticalChange_Display = (maxComY_Cycle - minComY_Cycle) / globalScale;

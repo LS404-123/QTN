@@ -1,6 +1,9 @@
 /**
  * Hexapod Simulator - Kinematics and Physics Logic
  */
+// ==========================================
+// [SECTION 1: Imports & Initialization]
+// ==========================================
 import { HexapodRenderer } from './renderer.js';
 import { BGScroller } from './bg_scroll.js';
 import { ChronoRecorder } from './chrono_recorder.js';
@@ -49,6 +52,9 @@ robotCanvas.height = canvas.height;
 
 const renderer = new HexapodRenderer(ctx, offCtx, robotCtx, canvas);
 
+// ==========================================
+// [SECTION 2: Machine Geometry & Parameters]
+// ==========================================
 // Fixed Machine Geometry Constants
 // Machine Geometry Parameters
 let globalScale = 1.5;      // Global scaling factor
@@ -71,6 +77,9 @@ let L_blue = 55.0 * globalScale;
 let L_foot = 20.0 * globalScale; // 初始值調回 20.0
 let gearboxShiftX = 0;
 
+// ==========================================
+// [SECTION 3: SVG Path Generation]
+// ==========================================
 // SVG Path globals for dynamic scaling (legSVGPath is already declared in svgs.js)
 let legSVG_h2y = 65; // Matches the default 45mm spacing in SVG units (20 + 45)
 
@@ -118,6 +127,9 @@ function updateLegSVGPath() {
 // Initial generation
 updateLegSVGPath();
 
+// ==========================================
+// [SECTION 4: Viewport & Dynamic Height]
+// ==========================================
 // Viewport Settings
 const scale = 3.5;
 const cx = canvas.width / 2;
@@ -167,7 +179,7 @@ let simSpeed = -0.1;
 let gravityScale = 1.0;
 
 // ==========================================
-//  Admin Mode Controller
+// [SECTION 5: Admin Mode Controller]
 // ==========================================
 const AdminController = {
     isActive: false,
@@ -211,6 +223,9 @@ let isLooping = false;
 let playOnePeriod = false;
 let accumulatedTheta = 0;
 
+// ==========================================
+// [SECTION 6: Physics State Variables]
+// ==========================================
 // 正向物理狀態變數
 let bodyX = 0;
 let prevBodyX = 0; // 追蹤上一幀的機身世界 X 座標，用於計算相對背景位移
@@ -273,6 +288,9 @@ let lastFrameTime = performance.now();
 
 // Viewport Settings (Moved to top to prevent ReferenceError)
 
+// ==========================================
+// [SECTION 7: Math & Geometry Helpers]
+// ==========================================
 export function getIntersection(C1, r1, C2, r2) {
     const dx = C2.x - C1.x, dy = C2.y - C1.y;
     const d = Math.sqrt(dx * dx + dy * dy);
@@ -417,8 +435,9 @@ const MIN_PAIR_DX = 2.0 * globalScale;
 /** 機身最大傾角 */
 const MAX_BODY_ROLL = Math.PI / 3;
 
-
-
+// ==========================================
+// [SECTION 8: Main Physics & Render Loop]
+// ==========================================
 /**
  * Main Render and Physics Logic Loop
  */
@@ -747,7 +766,9 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
     }
 }
 
-
+// ==========================================
+// [SECTION 9: Animation Loop]
+// ==========================================
 function animate() {
     let now = performance.now();
     let dt = (now - lastFrameTime) / 1000;
@@ -849,6 +870,9 @@ function triggerUpdate() {
     }
 }
 
+// ==========================================
+// [SECTION 10: UI Event Handlers]
+// ==========================================
 // --- Event Handlers ---
 
 document.getElementById('toggleGroundlineBtn').addEventListener('click', (e) => {
@@ -1078,6 +1102,9 @@ for (let i = 1; i <= 4; i++) {
     }
 }
 
+// ==========================================
+// [SECTION 11: AI Diagnostic Support]
+// ==========================================
 // --- AI Diagnostic Support ---
 let hopYHistory = [];
 let isClashing = false; // 全域衝突旗標
@@ -1169,6 +1196,9 @@ window.startChronoRecording = (paramsJson, isContinuous = false) => {
     return promise;
 };
 
+// ==========================================
+// [SECTION 12: Chronophotography Mode]
+// ==========================================
 // --- Chronophotography Mode ---
 let isChronoViewMode = false;
 const chronoDisplayCanvas = document.getElementById('chronoDisplay');

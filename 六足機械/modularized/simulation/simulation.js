@@ -833,7 +833,7 @@ function animate() {
             if (dt_cycle > 0.05) { // Minimum 0.05s to avoid tiny slivers
                 const newAvg = dx / dt_cycle;
                 // Blend cycle average for smoothness, but faster responsive if it was 0
-                const alpha = cycleAvgSpeed === 0 ? 1.0 : 0.3;
+                const alpha = cycleAvgSpeed === 0 ? 1.0 : 0.8;
                 cycleAvgSpeed = (1 - alpha) * cycleAvgSpeed + alpha * newAvg;
 
                 // 將畫布座標系的數據轉換為物理單位 (mm) 並更新給 UI 顯示

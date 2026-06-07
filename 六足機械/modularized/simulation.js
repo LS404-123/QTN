@@ -1158,7 +1158,13 @@ export function getSimplifiedAnalytics() {
             blueLink: Math.round(L_blue / globalScale),
             bodyWidth: Math.round(S / globalScale),
             crankRadius: Math.round(R),
-            phaseDiff: Math.round((phaseDiff / Math.PI) * 180)
+            phaseDiff: Math.round((phaseDiff / Math.PI) * 180),
+            gearboxShift: parseFloat((gearboxShiftX * globalScale).toFixed(1)),
+            motorTargetSpeed: parseFloat((Math.abs(simSpeed * 60)).toFixed(1)),
+            expectedNormalSpeed: Math.round(R * Math.abs(simSpeed * 60)),
+            bodyMass: bodyMass,
+            frictionCoeff: frictionCoeff,
+            gravityScale: parseFloat(gravityScale.toFixed(2))
         }
     };
 }

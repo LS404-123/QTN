@@ -66,3 +66,110 @@ graph TD
 *   **尾部指令 (Tail_Instruction)**: (L255) 這是 Prompt Engineering 的高階技巧。把最強制的限制（「限 50 字內」、「單一最致命問題」、「恰好 3 個 💬 選項」）放在整個 Prompt 的**最尾端**，能最大程度抵抗 AI 的遺忘或注意力偏移。
 *   **自適應降級 (Adaptive Scaffolding)**: (L258) 如果 `frustrationCount >= 2`，系統會在尾部指令中動態追加 `【自適應降級觸發】` 的系統層級警告，強制 AI **「改用 A/B 選擇題，禁止開放式問句」**。這完美解決了 AI 在學生卡關時還一直反問「你覺得呢？」的常見痛點。
 *   **防禦性解析器 (Defensive Parser)**: (L295) 就算 AI 沒有乖乖遵守規則，前端解析時會逐行檢查是否有 `💬` 符號。如果解析失敗導致陣列為空，系統會立即注入 `Safety Guardrail UX` (L311) 的保底選項（例如：「我不太懂」、「我們來試試別的」），確保 UI 工作流程絕對不會卡死。
+
+---
+
+## AI Prompt (系統提示詞) 結構組成拆解
+
+在每次送出請求給 Gemini API 前，系統會將靜態規則、動態變數與強制命令組裝成一個巨大的 Payload。這個流程圖解釋了最終送出的 Prompt 裡面到底包含了哪些元件，以及它們是如何限制 AI 的。
+
+```mermaid
+graph TD
+    A([最終傳遞給 AI 的完整 Prompt 結構]) --> B(1. 靜態系統提示 STATIC_COSTAR_PROMPT)
+    A --> C(2. 動態狀態注入 Dynamic Context)
+    A --> D(3. 使用者對話 Student_Input)
+    A --> E(4. 尾部防護指令 Tail_Instruction)
+
+    %% 1. 靜態系統提示
+    B --> B1[🤖 角色設定: 物理與機構學 AI 顧問]
+    B --> B2[📜 回答框架: COSTAR 溝通法則]
+    B --> B3[⚙️ 領域知識: 7 大核心物理診斷指標<br>足端軌跡、重心起伏、死點卡死等]
+
+    %% 2. 動態狀態注入
+    C --> C1[📊 Robot_State XML 標籤]
+    C1 --> C2[模擬器即時數據: 速度, 顛簸程度, 卡死狀態]
+    C1 --> C3[機構參數: 曲柄半徑, 腳長, 相位差等]
+    C --> C4{是否有截圖?}
+    C4 -- 是 --> C5[👁️ Visual_Instruction: 提示 AI 觀察腳印與軌跡]
+    C4 -- 否 --> C6[僅依賴文字參數]
+
+    %% 3. 使用者對話
+    D --> D1[👤 經過過濾與截斷的使用者原始輸入]
+
+    %% 4. 尾部防護指令
+    E --> E1[長度限制: 絕對不超過 50 字]
+    E --> E2[焦點限制: 挑選單一最致命問題引導]
+    E --> E3[UI 限制: 必須生成 3 個 💬 建議選項]
+    E --> E4{偵測到學生持續卡關?}
+    E4 -- 是 --> E5[⚠️ 觸發自適應降級: 改為具體 A/B 選擇題，禁止開放式問句]
+    E4 -- 否 --> E6[✅ 維持蘇格拉底式引導提問]
+```
+
+### Prompt 區塊解析
+
+1. **靜態系統提示 (Static Prefix)**: 這是 AI 的「靈魂與基礎知識」，包含了從 `ai_prompt.js` 定義的 7 項物理診斷標準（例如辨識撐竿跳、機構死點等），確保 AI 在回答物理問題時不會產生幻覺，而是依據專業理論。
+2. **動態狀態注入 (Dynamic Context)**: 這是 AI 的「眼睛與感官」。透過 `XML` 標籤把當下的物理數值（座標、速度、卡死狀態）強硬地塞進 Prompt 中。這使得 AI 不是在泛泛而談，而是能夠針對「現在」機器人的數值給出精確建議。
+3. **使用者對話 (Student_Input)**: 經過防溢位處理的學生輸入。
+4. **尾部防護指令 (Tail_Instruction)**: **這是控制 AI 格式的最重要防線**。LLM（大型語言模型）有「近因效應 (Recency Bias)」，把它必須遵守的死命令（50字以內、3個選項）放在 Prompt 的**最尾端**，能大幅度降低 AI 忘記格式的機率。同時，這裡也會根據學生的挫折度動態改變引導的難度（自適應降級）。
+
+---
+
+## 確切的 Prompt 檔案位置與輸入細節清單 (Exact & Detail List of Inputs)
+
+Prompt 的組裝主要發生在 `c:\Users\LS404\Desktop\QTN\六足機械\modularized\chat.js` 裡面的 `getAIResponse(userText)` 函數中（約第 209 行至 290 行）。當呼叫 Gemini API (`callGeminiAPI`) 時，最終送入的 Payload 包含 4 個主要部分：`systemPrompt`、`finalUserText`、`history`、`imageData`。
+
+### A. `systemPrompt` (系統級設定)
+*   **檔案位置**: `c:\Users\LS404\Desktop\QTN\AI_Chatbot_Framework_COSTAR_EN.md` (於 `chat.js` L5 引入)。
+*   **目的**: 定義 AI 的人格（機構學顧問）與回答框架（COSTAR 規則）。
+*   *(註: 物理診斷的細節原則參考自 `c:\Users\LS404\Desktop\QTN\六足機械\modularized\ai_prompt.js`)*
+
+### B. `finalUserText` (動態使用者文字)
+這一段在 `chat.js` L263 組裝，結合了以下元素：
+
+1.  **`<Robot_State>` (模擬器即時參數)**
+    如果參數有變或卡死，會注入這段完整的資料 (L244-L249)：
+    ```xml
+    <Robot_State>
+      <Diagnosis_Tags>過度顛簸, 打滑</Diagnosis_Tags>
+      <Analytics_Data>卡死=false, 穩定=true, 實際速度=25.4 mm/s, 顛簸程度=12.5 mm, 目前電量=100%, 該電量預期速度=120 mm/s</Analytics_Data>
+      <Mechanical_Params>腳長=100, 機器人高度=80, 藍色直桿=50, 身體半寬=48, 曲柄孔位=20, 相位差=180°, 齒輪箱位移=0</Mechanical_Params>
+      <Performance_Baseline>馬達轉速=6.0 rad/s, 理論空載速度(Expected Normal Speed)=120 mm/s</Performance_Baseline>
+      <Environment_Physics>機身質量=0.5kg, 腳底摩擦係數=0.8, 重力倍率=1.5</Environment_Physics>
+      <Posture_Criteria>判斷姿勢：請比較「實際速度」與「該電量預期速度」。若實際速度低於預期速度，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>
+      <Visual_Instruction>請觀察附件中的連續攝影 (Chronophotograph) ，依據腳印的分布與機身的高低起伏來輔助你的診斷。</Visual_Instruction>
+    </Robot_State>
+    ```
+    如果參數都沒變，則只送這段節省 Token (L252)：
+    ```xml
+    <Robot_State>
+      <Info>機械參數維持不變，持續觀察中</Info>
+    </Robot_State>
+    ```
+
+2.  **`<Student_Input>` (學生的對話)**
+    這包含了經過長度限制 (最大 100 字) 與防溢位處理的文字 (L263)：
+    ```xml
+    <Student_Input>
+    [學生輸入的文字，例如："我不懂為什麼會卡住"]
+    </Student_Input>
+    ```
+
+3.  **`<Tail_Instruction>` (尾部防護指令)**
+    預設強制內容 (L255)：
+    ```xml
+    <Tail_Instruction>
+    系統強制提醒：請務必遵守 COSTAR 框架！主文限 50 字內，針對「單一」最致命問題給予適當的引導或回饋。回覆最後必須提供恰好 3 個「💬 建議回覆選項按鈕」。
+    </Tail_Instruction>
+    ```
+    如果 `frustrationCount >= 2` (學生連續說不知道)，會動態附加這段字 (L258)：
+    ```text
+    【自適應降級觸發】學生連續表示不知道或卡關。請立刻降低提問難度！改用具體的「A/B選擇題」或是「明確的參數調整指示」，禁止再使用開放式問句。
+    ```
+
+### C. `historyToSend` (對話歷史紀錄)
+*   **實際內容**: `this.history.slice(0, -1)` (L266)。
+*   **細節**: 只保留最近 6 句 (約 3 輪對話)，格式為 Gemini 原生的物件陣列：`[{ role: 'user', parts: [{ text: '...' }] }, { role: 'model', parts: [{ text: '...' }] }]`。
+
+### D. `imageData` (連續攝影視覺資訊)
+*   **實際內容**: `captureCanvas(currentParamsJson)` 產生的 WebP base64 影像字串。
+*   **觸發條件 (L221-L225)**: 只有當 (1) 參數改變 (2) 診斷結果改變 (3) 使用者輸入包含 "看", "圖", "連續攝影", "照片", "截圖", "軌跡", "步態" (4) 對話剛開始 < 3 句時，才會帶入此截圖。否則傳遞 `null`。

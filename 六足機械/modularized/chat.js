@@ -3,6 +3,7 @@
  */
 import { getSimplifiedAnalytics } from './simulation.js';
 import STATIC_COSTAR_PROMPT from '../../AI_Chatbot_Framework_COSTAR_EN.md?raw';
+import KINEMATICS_REFERENCE from './Kinematics_Reference.md?raw';
 
 const ChatManager = {
     history: [],
@@ -211,6 +212,13 @@ const ChatManager = {
 
         const analytics = getSimplifiedAnalytics();
         const currentParams = analytics.params;
+
+        // 計算預期速度與電量，並注入 currentParams 以確保滑桿變動時能觸發重傳
+        const speedMagnitude = parseFloat(document.getElementById('speedSlider')?.value || "0.1");
+        const batteryLevel = Math.max(0, Math.min(1, (speedMagnitude - 0.1) / 0.1));
+        currentParams.batteryPct = Math.round(batteryLevel * 100);
+        const expectedSpeed = (28.7 + 32 * batteryLevel).toFixed(1);
+
         const currentParamsJson = JSON.stringify(currentParams);
         const currentDiagnosisJson = JSON.stringify(analytics.diagnosis_tags);
 
@@ -239,20 +247,38 @@ const ChatManager = {
         let robotStateXml = "";
         let visualPrompt = imageData ? "\n  <Visual_Instruction>請觀察附件中的連續攝影 (Chronophotograph) ，依據腳印的分布與機身的高低起伏來輔助你的診斷。</Visual_Instruction>" : "";
 
+        // --- 計算參數變動差異 (Parameter Delta) ---
+        const baseline = {
+            legLength: 25, footLength: 20, blueLink: 55, bodyWidth: 48, crankRadius: 6.5, phaseDiff: 180, gearboxShift: 0
+        };
+        const deltaStrs = Object.keys(baseline).map(key => {
+            const curr = currentParams[key];
+            const base = baseline[key];
+            if (curr > base) return `${key}: ${curr} (基準 ${base}，增加)`;
+            if (curr < base) return `${key}: ${curr} (基準 ${base}，減少)`;
+            return `${key}: ${curr} (無變動)`;
+        });
+        const parameterDeltaStr = deltaStrs.join(", ");
+
         // 只有在參數變動、有結構衝突、或是歷史紀錄很短時，才發送完整物理數據
         if (currentParamsJson !== this.lastSentParamsJson || analytics.symptom.isClashing || this.history.length < 3) {
             robotStateXml = `
 <Robot_State>
   <Diagnosis_Tags>${analytics.diagnosis_tags.join(", ")}</Diagnosis_Tags>
-  <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm</Analytics_Data>
-  <Mechanical_Params>腳長=${currentParams.legLength}, 機器人高度=${currentParams.footLength}, 藍色直桿=${currentParams.blueLink}, 曲柄孔位=${currentParams.crankRadius}, 相位差=${currentParams.phaseDiff}°</Mechanical_Params>${visualPrompt}
-</Robot_State>`;
+  <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 實際速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm, 目前電量=${currentParams.batteryPct}%, 該電量預期速度=${expectedSpeed} mm/s</Analytics_Data>
+  <Parameter_Delta>當前滑桿偏離基準狀況：${parameterDeltaStr}</Parameter_Delta>
+  <Mechanical_Params>腳長=${currentParams.legLength}, 機器人高度=${currentParams.footLength}, 藍色直桿=${currentParams.blueLink}, 身體半寬=${currentParams.bodyWidth}, 曲柄孔位=${currentParams.crankRadius}, 相位差=${currentParams.phaseDiff}°, 齒輪箱位移=${currentParams.gearboxShift}</Mechanical_Params>
+  <Performance_Baseline>馬達轉速=${currentParams.motorTargetSpeed} rad/s, 理論空載速度(Expected Normal Speed)=${currentParams.expectedNormalSpeed} mm/s</Performance_Baseline>
+  <Environment_Physics>機身質量=${currentParams.bodyMass}kg, 腳底摩擦係數=${currentParams.frictionCoeff}, 重力倍率=${currentParams.gravityScale}</Environment_Physics>
+  <Posture_Criteria>判斷姿勢：請比較「實際速度」與「該電量預期速度」。若實際速度低於預期速度，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>${visualPrompt}
+</Robot_State>
+\n${KINEMATICS_REFERENCE}`;
             this.lastSentParamsJson = currentParamsJson;
         } else {
-            robotStateXml = `<Robot_State>\n  <Info>機械參數維持不變，持續觀察中</Info>${visualPrompt}\n</Robot_State>`;
+            robotStateXml = `<Robot_State>\n  <Info>機械參數與電量維持不變，持續觀察中</Info>${visualPrompt}\n</Robot_State>\n${KINEMATICS_REFERENCE}`;
         }
 
-        let tailInstruction = `\n<Tail_Instruction>\n系統強制提醒：請務必遵守 COSTAR 規則！主文限 50 字內，挑選「單一」最致命問題進行蘇格拉底式引導。回覆最後必須提供恰好 3 個「💬 建議回覆選項按鈕」。\n</Tail_Instruction>`;
+        let tailInstruction = `\n<Tail_Instruction>\n系統強制提醒：請務必遵守 COSTAR 框架！主文限 50 字內，針對「單一」最致命問題給予適當的引導或回饋。回覆最後必須提供恰好 3 個「💬 建議回覆選項按鈕」。\n</Tail_Instruction>`;
 
         // Stage 4: 自適應降級 (Adaptive Scaffolding)
         if (this.frustrationCount >= 2) {

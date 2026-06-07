@@ -8,6 +8,7 @@ import { HexapodRenderer } from './renderer.js';
 import { BGScroller } from './bg_scroll.js';
 import { ChronoRecorder } from './chrono_recorder.js';
 import { TrajectoryTracker } from './trajectory.js';
+import { checkLegCollision } from './collision.js';
 
 // Initialize ChronoRecorder with 6 frames per cycle (60 degrees)
 const chronoRecorder = new ChronoRecorder(1120, 630, 6);
@@ -217,6 +218,7 @@ const AdminController = {
 let isSlowMo = false;
 let showGroundline = true;
 let showFriction = true;
+let showHitbox = false;
 
 
 let isLooping = false;
@@ -459,8 +461,36 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         let validLines = [];
         let invalidCOMLines = [];
         let groundLine = null;
+        let legOverlaps = { near: [], far: [] };
 
         if (near && far) {
+            const checkSide = (data) => {
+                const legs = [
+                    { name: 'F', top: data.FT, foot: data.foot_f, idx: 0 },
+                    { name: 'M', top: data.MT, foot: data.foot_m, idx: 1 },
+                    { name: 'R', top: data.RT, foot: data.foot_r, idx: 2 }
+                ];
+                let overlaps = [];
+                for (let i = 0; i < legs.length; i++) {
+                    for (let j = i + 1; j < legs.length; j++) {
+                        const col = checkLegCollision(legs[i], legs[j], globalScale);
+                        if (col.collided) {
+                            overlaps.push({ leg1: legs[i], leg2: legs[j], pt: col.pt });
+                        }
+                    }
+                }
+                return overlaps;
+            };
+
+            legOverlaps.near = checkSide(near);
+            legOverlaps.far = checkSide(far);
+
+            if (legOverlaps.near.length > 0 || legOverlaps.far.length > 0) {
+                isClashing = true;
+                isPlaying = false;
+                window.simulationErrorMsg = '機構干涉：腳部形狀發生碰撞！請調整連桿參數。';
+            }
+
             const allFeetLocal = [
                 near.foot_f, near.foot_m, near.foot_r,
                 far.foot_f, far.foot_m, far.foot_r
@@ -723,12 +753,12 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
                 near, far, allFeetLocal, bodyRoll, bodyX, bodyY, scale, targetGy, cx,
                 AdminController, robotCanvas, offscreenCanvas,
                 Pf, Pr, C_crank, gearboxShiftX, bodyYOffset, S,
-                showGroundline, showFriction, validLines, invalidCOMLines, groundLine,
+                showGroundline, showFriction, showHitbox, validLines, invalidCOMLines, groundLine,
                 footStates, lastGroundedIndices, globalScale,
                 trajectoryTracker, cameraX,
                 legSVGPath, legSVG_h2y, currentCrankHoleY,
                 displayDist, displaySpeed, displayAvg10Speed, isAvgSpeedStable, isStableSupport, comVerticalChange_Display,
-                footStiffness
+                footStiffness, legOverlaps
             };
 
             renderer.renderScene(state);
@@ -895,6 +925,12 @@ document.getElementById('toggleGroundlineBtn').addEventListener('click', (e) => 
 document.getElementById('toggleFrictionBtn').addEventListener('click', (e) => {
     showFriction = !showFriction;
     e.target.classList.toggle('active', showFriction);
+    triggerUpdate();
+});
+
+document.getElementById('toggleHitboxBtn').addEventListener('click', (e) => {
+    showHitbox = !showHitbox;
+    e.target.classList.toggle('active', showHitbox);
     triggerUpdate();
 });
 
@@ -1224,6 +1260,9 @@ const chronoDisplayCtx = chronoDisplayCanvas ? chronoDisplayCanvas.getContext('2
 const toggleChronoViewBtn = document.getElementById('toggleChronoViewBtn');
 
 if (toggleChronoViewBtn && chronoDisplayCanvas) {
+    const toggleGroundlineBtn = document.getElementById('toggleGroundlineBtn');
+    const toggleFrictionBtn = document.getElementById('toggleFrictionBtn');
+    const toggleHitboxBtn = document.getElementById('toggleHitboxBtn');
     toggleChronoViewBtn.addEventListener('click', () => {
         isChronoViewMode = !isChronoViewMode;
         const simCanvas = document.getElementById('simCanvas');

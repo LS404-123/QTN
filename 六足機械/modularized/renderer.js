@@ -110,11 +110,78 @@ export class HexapodRenderer {
         };
 
         const drawLegs = () => {
-            const legFill = isFar ? '#fef08a' : '#facc15';
-            const legStroke = isFar ? '#fde047' : '#b45309';
-            this.drawSVGLink(data.FT, state.Pf, state.legSVGPath, 30, 20, 30, state.legSVG_h2y, legStroke, legFill, isFar, targetCtx, state);
-            this.drawSVGLink(data.MT, data.ML, state.legSVGPath, 30, 20, 30, state.legSVG_h2y, legStroke, legFill, isFar, targetCtx, state);
-            this.drawSVGLink(data.RT, state.Pr, state.legSVGPath, 30, 20, 30, state.legSVG_h2y, legStroke, legFill, isFar, targetCtx, state);
+            const overlaps = isFar ? state.legOverlaps?.far : state.legOverlaps?.near;
+            const isColliding = (name) => {
+                if (!overlaps) return false;
+                return overlaps.some(o => o.leg1.name === name || o.leg2.name === name);
+            };
+
+            const getColors = (name) => {
+                if (isColliding(name)) {
+                    return { fill: '#fecaca', stroke: '#ef4444' }; // Red highlight
+                }
+                return { 
+                    fill: isFar ? '#fef08a' : '#facc15',
+                    stroke: isFar ? '#fde047' : '#b45309'
+                };
+            };
+
+            const colorF = getColors('F');
+            this.drawSVGLink(data.FT, state.Pf, state.legSVGPath, 30, 20, 30, state.legSVG_h2y, colorF.stroke, colorF.fill, isFar, targetCtx, state);
+            
+            const colorM = getColors('M');
+            this.drawSVGLink(data.MT, data.ML, state.legSVGPath, 30, 20, 30, state.legSVG_h2y, colorM.stroke, colorM.fill, isFar, targetCtx, state);
+            
+            const colorR = getColors('R');
+            this.drawSVGLink(data.RT, state.Pr, state.legSVGPath, 30, 20, 30, state.legSVG_h2y, colorR.stroke, colorR.fill, isFar, targetCtx, state);
+
+            if (state.showHitbox) {
+                const drawHitbox = (legData) => {
+                    const top = legData.top;
+                    const foot = legData.foot;
+                    const footCenter = { x: foot.cx, y: foot.cy };
+                    const rendererScale = (25.0 * state.globalScale) / 45.0;
+                    const r_upper = 9 * rendererScale;
+                    const r_foot_x = 24.5 * rendererScale;
+                    const r_foot_y = 13 * rendererScale;
+
+                    // Draw Upper Leg Capsule
+                    const mTop = this.mapCoords(top, state);
+                    const mFootCenter = this.mapCoords(footCenter, state);
+                    const dx = foot.cx - top.x;
+                    const dy = foot.cy - top.y;
+                    const len = Math.sqrt(dx*dx + dy*dy);
+                    const nx = -dy / len;
+                    const ny = dx / len;
+                    
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(mTop.x, mTop.y);
+                    targetCtx.lineTo(mFootCenter.x, mFootCenter.y);
+                    targetCtx.strokeStyle = isFar ? 'rgba(0, 255, 0, 0.2)' : 'rgba(0, 255, 0, 0.5)';
+                    targetCtx.lineWidth = r_upper * 2 * state.scale;
+                    targetCtx.lineCap = 'round';
+                    targetCtx.stroke();
+
+                    // Draw Foot Capsule
+                    const extent = Math.max(0, r_foot_x - r_foot_y);
+                    const p1 = { x: foot.cx + nx * extent, y: foot.cy + ny * extent };
+                    const p2 = { x: foot.cx - nx * extent, y: foot.cy - ny * extent };
+                    const mP1 = this.mapCoords(p1, state);
+                    const mP2 = this.mapCoords(p2, state);
+
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(mP1.x, mP1.y);
+                    targetCtx.lineTo(mP2.x, mP2.y);
+                    targetCtx.strokeStyle = isFar ? 'rgba(255, 0, 255, 0.2)' : 'rgba(255, 0, 255, 0.5)';
+                    targetCtx.lineWidth = r_foot_y * 2 * state.scale;
+                    targetCtx.lineCap = 'round';
+                    targetCtx.stroke();
+                };
+
+                drawHitbox({ top: data.FT, foot: data.foot_f });
+                drawHitbox({ top: data.MT, foot: data.foot_m });
+                drawHitbox({ top: data.RT, foot: data.foot_r });
+            }
         };
 
         if (isFar) {
@@ -375,6 +442,34 @@ export class HexapodRenderer {
             }
 
             ctx.drawImage(robotCanvas, 0, 0);
+
+            // Draw Collision Markers
+            if (state.legOverlaps) {
+                const drawCollisionMarker = (pt) => {
+                    if (!pt) return;
+                    const mp = this.mapCoords(pt, state);
+                    ctx.beginPath();
+                    ctx.arc(mp.x, mp.y, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'; // Red
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // X marker
+                    ctx.beginPath();
+                    ctx.moveTo(mp.x - 4, mp.y - 4);
+                    ctx.lineTo(mp.x + 4, mp.y + 4);
+                    ctx.moveTo(mp.x + 4, mp.y - 4);
+                    ctx.lineTo(mp.x - 4, mp.y + 4);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                };
+
+                state.legOverlaps.far.forEach(o => drawCollisionMarker(o.pt));
+                state.legOverlaps.near.forEach(o => drawCollisionMarker(o.pt));
+            }
 
             if (AdminController.overlayAlpha > 0.01) {
                 ctx.save();

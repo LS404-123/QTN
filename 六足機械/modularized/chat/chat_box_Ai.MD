@@ -50,7 +50,7 @@ graph TD
 
 ## 系統結構深度審查與解析
 
-從 `chat.js` 與 `ai_prompt.js` 可以看出，系統是透過 **「前端預處理」**、**「上下文動態組裝」** 與 **「後端防禦性解析」** 三個階段來把控 AI 的行為：
+從 `chat.js` 與系統提示檔可以看出，系統是透過 **「前端預處理」**、**「上下文動態組裝」** 與 **「後端防禦性解析」** 三個階段來把控 AI 的行為：
 
 ### 1. 輸入驅動與過濾 (Input Driven)
 *   **防溢位 (Input Sanitization)**: 限制輸入長度在 100 字內，防止越獄 (Jailbreak) 或無意義長文消耗 Token (L156)。
@@ -83,7 +83,7 @@ graph TD
     %% 1. 靜態系統提示
     B --> B1[🤖 角色設定: 物理與機構學 AI 顧問]
     B --> B2[📜 回答框架: COSTAR 溝通法則]
-    B --> B3[⚙️ 領域知識: 7 大核心物理診斷指標<br>足端軌跡、重心起伏、死點卡死等]
+    B --> B3[⚙️ 領域知識: 機構學知識庫<br>7大變數影響法則與幾何黃金比例]
 
     %% 2. 動態狀態注入
     C --> C1[📊 Robot_State XML 標籤]
@@ -107,7 +107,7 @@ graph TD
 
 ### Prompt 區塊解析
 
-1. **靜態系統提示 (Static Prefix)**: 這是 AI 的「靈魂與基礎知識」，包含了從 `ai_prompt.js` 定義的 7 項物理診斷標準（例如辨識撐竿跳、機構死點等），確保 AI 在回答物理問題時不會產生幻覺，而是依據專業理論。
+1. **靜態系統提示 (Static Prefix)**: 這是 AI 的「靈魂與基礎知識」，包含了從 `Kinematics_Reference.md` 定義的 7 項機構學變數影響法則與幾何穩定性黃金比例，確保 AI 在回答物理問題時不會產生幻覺，而是依據專業理論與黃金比例公式進行內部診斷。
 2. **動態狀態注入 (Dynamic Context)**: 這是 AI 的「眼睛與感官」。透過 `XML` 標籤把當下的物理數值（座標、速度、卡死狀態）強硬地塞進 Prompt 中。這使得 AI 不是在泛泛而談，而是能夠針對「現在」機器人的數值給出精確建議。
 3. **使用者對話 (Student_Input)**: 經過防溢位處理的學生輸入。
 4. **尾部防護指令 (Tail_Instruction)**: **這是控制 AI 格式的最重要防線**。LLM（大型語言模型）有「近因效應 (Recency Bias)」，把它必須遵守的死命令（50字以內、3個選項）放在 Prompt 的**最尾端**，能大幅度降低 AI 忘記格式的機率。同時，這裡也會根據學生的挫折度動態改變引導的難度（自適應降級）。
@@ -121,7 +121,7 @@ Prompt 的組裝主要發生在 `c:\Users\LS404\Desktop\QTN\六足機械\modular
 ### A. `systemPrompt` (系統級設定)
 *   **檔案位置**: `c:\Users\LS404\Desktop\QTN\AI_Chatbot_Framework_COSTAR_EN.md` (於 `chat.js` L5 引入)。
 *   **目的**: 定義 AI 的人格（機構學顧問）與回答框架（COSTAR 規則）。
-*   *(註: 物理診斷的細節原則參考自 `c:\Users\LS404\Desktop\QTN\六足機械\modularized\ai_prompt.js`)*
+*   *(註: 物理與機構診斷的細節原則參考自 `c:\Users\LS404\Desktop\QTN\六足機械\modularized\Kinematics_Reference.md`)*
 
 ### B. `finalUserText` (動態使用者文字)
 這一段在 `chat.js` L263 組裝，結合了以下元素：
@@ -130,11 +130,9 @@ Prompt 的組裝主要發生在 `c:\Users\LS404\Desktop\QTN\六足機械\modular
     如果參數有變或卡死，會注入這段完整的資料 (L244-L249)：
     ```xml
     <Robot_State>
-      <Diagnosis_Tags>過度顛簸, 打滑</Diagnosis_Tags>
       <Analytics_Data>卡死=false, 穩定=true, 實際速度=25.4 mm/s, 顛簸程度=12.5 mm, 目前電量=100%, 該電量預期速度=120 mm/s</Analytics_Data>
       <Mechanical_Params>腳長=100, 機器人高度=80, 藍色直桿=50, 身體半寬=48, 曲柄孔位=20, 相位差=180°, 齒輪箱位移=0</Mechanical_Params>
       <Performance_Baseline>馬達轉速=6.0 rad/s, 理論空載速度(Expected Normal Speed)=120 mm/s</Performance_Baseline>
-      <Environment_Physics>機身質量=0.5kg, 腳底摩擦係數=0.8, 重力倍率=1.5</Environment_Physics>
       <Posture_Criteria>判斷姿勢：請比較「實際速度」與「該電量預期速度」。若實際速度低於預期速度，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>
       <Visual_Instruction>請觀察附件中的連續攝影 (Chronophotograph) ，依據腳印的分布與機身的高低起伏來輔助你的診斷。</Visual_Instruction>
     </Robot_State>
@@ -158,7 +156,7 @@ Prompt 的組裝主要發生在 `c:\Users\LS404\Desktop\QTN\六足機械\modular
     預設強制內容 (L255)：
     ```xml
     <Tail_Instruction>
-    系統強制提醒：請務必遵守 COSTAR 框架！主文限 50 字內，針對「單一」最致命問題給予適當的引導或回饋。回覆最後必須提供恰好 3 個「💬 建議回覆選項按鈕」。
+    系統強制提醒：請務必遵守 COSTAR 框架，並根據 Kinematics_Reference.md 的原則進行引導提問！主文限 50 字內，針對「單一」最致命問題給予適當的引導或回饋。回覆最後必須提供恰好 3 個「💬 建議回覆選項按鈕」。
     </Tail_Instruction>
     ```
     如果 `frustrationCount >= 2` (學生連續說不知道)，會動態附加這段字 (L258)：
@@ -173,3 +171,49 @@ Prompt 的組裝主要發生在 `c:\Users\LS404\Desktop\QTN\六足機械\modular
 ### D. `imageData` (連續攝影視覺資訊)
 *   **實際內容**: `captureCanvas(currentParamsJson)` 產生的 WebP base64 影像字串。
 *   **觸發條件 (L221-L225)**: 只有當 (1) 參數改變 (2) 診斷結果改變 (3) 使用者輸入包含 "看", "圖", "連續攝影", "照片", "截圖", "軌跡", "步態" (4) 對話剛開始 < 3 句時，才會帶入此截圖。否則傳遞 `null`。
+
+---
+
+## 實際組裝範例 (Trial Prompt Structure)
+
+為了更具體地理解，以下是當學生調整了參數且發生卡死，並且表達不知道該怎麼辦時，系統在底層實際組裝出並傳遞給 Gemini API 的完整 Text Prompt 結構範例（不含圖片 Base64）：
+
+```text
+[A. 系統級設定 System Prompt]
+你是專注於機構學與物理引擎的 AI 顧問。
+(此處省略 AI_Chatbot_Framework_COSTAR_EN.md 數百字的人格設定與 COSTAR 規則...)
+(此處省略 Kinematics_Reference.md 中定義的 7 大變數影響與幾何穩定性判斷...)
+
+[C. 歷史對話 History]
+User: 機器人走得好慢喔。
+Model: 觀察看看腳印，是不是有些腳沒有踩在地上呢？你可以調整看看腿長或是黃色連桿。
+User: 我把腿長調長了，結果現在完全不會動了。
+Model: 腿太長確實會造成機構互相干涉。你還記得「幾何穩定性」中提到的比例嗎？要不要試試看調整藍色連桿來搭配現在的腿長？
+
+[B1. 動態模擬器數據 <Robot_State>]
+<Robot_State>
+  <Analytics_Data>卡死=true, 穩定=false, 實際速度=0 mm/s, 顛簸程度=5.0 mm, 目前電量=100%, 該電量預期速度=120 mm/s</Analytics_Data>
+  <Mechanical_Params>腳長=150, 機器人高度=80, 藍色直桿=50, 身體半寬=48, 曲柄孔位=20, 相位差=180°, 齒輪箱位移=0</Mechanical_Params>
+  <Performance_Baseline>馬達轉速=6.0 rad/s, 理論空載速度(Expected Normal Speed)=120 mm/s</Performance_Baseline>
+  <Posture_Criteria>判斷姿勢：請比較「實際速度」與「該電量預期速度」。若實際速度低於預期速度，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>
+  <Visual_Instruction>請觀察附件中的連續攝影 (Chronophotograph) ，依據腳印的分布與機身的高低起伏來輔助你的診斷。</Visual_Instruction>
+</Robot_State>
+
+[B2. 使用者當前輸入 <Student_Input>]
+<Student_Input>
+我不知道啦，它就是卡住了不動，好難喔
+</Student_Input>
+
+[B3. 尾部防護指令與降級 <Tail_Instruction>]
+<Tail_Instruction>
+系統強制提醒：請務必遵守 COSTAR 框架，並根據 Kinematics_Reference.md 的原則進行引導提問！主文限 50 字內，針對「單一」最致命問題給予適當的引導或回饋。回覆最後必須提供恰好 3 個「💬 建議回覆選項按鈕」。
+【自適應降級觸發】學生連續表示不知道或卡關。請立刻降低提問難度！改用具體的「A/B選擇題」或是「明確的參數調整指示」，禁止再使用開放式問句。
+</Tail_Instruction>
+```
+
+### 範例結構解析：
+1. **System Prompt 打底**：建立嚴謹的機構學基礎與對話框架。
+2. **History 提供脈絡**：讓 AI 知道剛才發生了什麼（學生調長了腿長）。
+3. **Robot_State 注入鐵證**：AI 看到 `卡死=true` 與 `腳長=150`（明顯過長，且與 `藍色直桿=50` 不符合幾何穩定性），AI 就能確診病因。
+4. **Student_Input 反映情緒**：學生明確表達出挫敗（「不知道啦」、「好難喔」）。
+5. **Tail_Instruction 強制收斂**：因為偵測到挫折，尾部指令直接觸發了「自適應降級」。因此，AI 不會再反問「你覺得是哪裡卡住呢？」，而是會被強制轉換為保母模式：「腿長 150 太長導致卡死了。我們有兩個解法：A. 把腿長調回原本的長度，或是 B. 把藍色直桿也加長。你想試試哪一個？」

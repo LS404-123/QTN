@@ -1,9 +1,9 @@
 /**
  * AI Chat Logic - 🤖 小六 AI 診斷助手
  */
-import { getSimplifiedAnalytics } from './simulation.js';
-import STATIC_COSTAR_PROMPT from '../../AI_Chatbot_Framework_COSTAR_EN.md?raw';
-import KINEMATICS_REFERENCE from './Kinematics_Reference.md?raw';
+import { getSimplifiedAnalytics } from '../simulation/simulation.js';
+import STATIC_COSTAR_PROMPT from '../../../AI_Chatbot_Framework_COSTAR_EN.md?raw';
+import KINEMATICS_REFERENCE from '../simulation/Kinematics_Reference.md?raw';
 
 const ChatManager = {
     history: [],
@@ -220,15 +220,16 @@ const ChatManager = {
         const expectedSpeed = (28.7 + 32 * batteryLevel).toFixed(1);
 
         const currentParamsJson = JSON.stringify(currentParams);
-        const currentDiagnosisJson = JSON.stringify(analytics.diagnosis_tags);
 
         // --- 影像節流控制 (Image Throttling) ---
         const visualKeywords = ["看", "圖", "連續攝影", "照片", "截圖", "軌跡", "步態"];
         const hasVisualKeyword = visualKeywords.some(kw => userText.includes(kw));
 
+        const stateChanged = (analytics.symptom.isClashing !== this.lastIsClashing) || (analytics.symptom.isStable !== this.lastIsStable);
+
         const shouldSendImage = 
             (currentParamsJson !== this.lastSentParamsJson) || 
-            (currentDiagnosisJson !== this.lastDiagnosisJson) || 
+            stateChanged || 
             hasVisualKeyword || 
             this.history.length < 3;
 
@@ -238,7 +239,8 @@ const ChatManager = {
             imageData = await this.captureCanvas(currentParamsJson);
         }
         
-        this.lastDiagnosisJson = currentDiagnosisJson;
+        this.lastIsClashing = analytics.symptom.isClashing;
+        this.lastIsStable = analytics.symptom.isStable;
 
         // --- 核心機械構造規格手冊 (System Prompt - Static Prefix) ---
         const systemPrompt = STATIC_COSTAR_PROMPT;
@@ -264,12 +266,10 @@ const ChatManager = {
         if (currentParamsJson !== this.lastSentParamsJson || analytics.symptom.isClashing || this.history.length < 3) {
             robotStateXml = `
 <Robot_State>
-  <Diagnosis_Tags>${analytics.diagnosis_tags.join(", ")}</Diagnosis_Tags>
   <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 實際速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm, 目前電量=${currentParams.batteryPct}%, 該電量預期速度=${expectedSpeed} mm/s</Analytics_Data>
   <Parameter_Delta>當前滑桿偏離基準狀況：${parameterDeltaStr}</Parameter_Delta>
   <Mechanical_Params>腳長=${currentParams.legLength}, 機器人高度=${currentParams.footLength}, 藍色直桿=${currentParams.blueLink}, 身體半寬=${currentParams.bodyWidth}, 曲柄孔位=${currentParams.crankRadius}, 相位差=${currentParams.phaseDiff}°, 齒輪箱位移=${currentParams.gearboxShift}</Mechanical_Params>
   <Performance_Baseline>馬達轉速=${currentParams.motorTargetSpeed} rad/s, 理論空載速度(Expected Normal Speed)=${currentParams.expectedNormalSpeed} mm/s</Performance_Baseline>
-  <Environment_Physics>機身質量=${currentParams.bodyMass}kg, 腳底摩擦係數=${currentParams.frictionCoeff}, 重力倍率=${currentParams.gravityScale}</Environment_Physics>
   <Posture_Criteria>判斷姿勢：請比較「實際速度」與「該電量預期速度」。若實際速度低於預期速度，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>${visualPrompt}
 </Robot_State>
 \n${KINEMATICS_REFERENCE}`;
@@ -278,7 +278,7 @@ const ChatManager = {
             robotStateXml = `<Robot_State>\n  <Info>機械參數與電量維持不變，持續觀察中</Info>${visualPrompt}\n</Robot_State>\n${KINEMATICS_REFERENCE}`;
         }
 
-        let tailInstruction = `\n<Tail_Instruction>\n系統強制提醒：請務必遵守 COSTAR 框架！主文限 50 字內，針對「單一」最致命問題給予適當的引導或回饋。回覆最後必須提供恰好 3 個「💬 建議回覆選項按鈕」。\n</Tail_Instruction>`;
+        let tailInstruction = `\n<Tail_Instruction>\n系統強制提醒：請務必遵守 COSTAR 框架，並根據 Kinematics_Reference.md 的原則進行引導提問！主文限 50 字內，針對「單一」最致命問題給予適當的引導或回饋。回覆最後必須提供恰好 3 個「💬 建議回覆選項按鈕」。\n</Tail_Instruction>`;
 
         // Stage 4: 自適應降級 (Adaptive Scaffolding)
         if (this.frustrationCount >= 2) {

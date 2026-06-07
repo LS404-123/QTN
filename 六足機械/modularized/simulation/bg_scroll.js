@@ -3,18 +3,18 @@
  * 完全對齊 f71e526 版本的座標與參數
  */
 
-import hill2Svg from '../SVG/bg/hill/hill2.svg?raw';
-import hill1Svg from '../SVG/bg/hill/hill1.svg?raw';
-import ground3Svg from '../SVG/bg/road/ground3.svg?raw';
-import ground2Svg from '../SVG/bg/road/ground2.svg?raw';
-import ground1Svg from '../SVG/bg/road/ground1.svg?raw';
-import sunSvg from '../SVG/bg/sun/sun.svg?raw';
-import cloud1Svg from '../SVG/bg/cloud/cloud1.svg?raw';
-import cloud2Svg from '../SVG/bg/cloud/cloud2.svg?raw';
-import cloud3Svg from '../SVG/bg/cloud/cloud3.svg?raw';
-import tree1Svg from '../SVG/bg/tree/tree1.svg?raw';
-import tree2Svg from '../SVG/bg/tree/tree2.svg?raw';
-import tree3Svg from '../SVG/bg/tree/tree3.svg?raw';
+import hill2Svg from '../../SVG/bg/hill/hill2.svg?raw';
+import hill1Svg from '../../SVG/bg/hill/hill1.svg?raw';
+import ground3Svg from '../../SVG/bg/road/ground3.svg?raw';
+import ground2Svg from '../../SVG/bg/road/ground2.svg?raw';
+import ground1Svg from '../../SVG/bg/road/ground1.svg?raw';
+import sunSvg from '../../SVG/bg/sun/sun.svg?raw';
+import cloud1Svg from '../../SVG/bg/cloud/cloud1.svg?raw';
+import cloud2Svg from '../../SVG/bg/cloud/cloud2.svg?raw';
+import cloud3Svg from '../../SVG/bg/cloud/cloud3.svg?raw';
+import tree1Svg from '../../SVG/bg/tree/tree1.svg?raw';
+import tree2Svg from '../../SVG/bg/tree/tree2.svg?raw';
+import tree3Svg from '../../SVG/bg/tree/tree3.svg?raw';
 
 export class BGScroller {
     constructor(canvasId, options = {}) {

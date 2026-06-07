@@ -1169,17 +1169,6 @@ export function getSimplifiedAnalytics() {
     const currentSpeed = (typeof displaySpeed !== 'undefined') ? parseFloat(displaySpeed.toFixed(1)) : 0;
     const isStable = (typeof isStableSupport !== 'undefined') ? isStableSupport : true;
 
-    // 產生診斷標籤
-    let tags = [];
-    if (hasConflict) {
-        tags.push("急診-卡死");
-    } else {
-        if (!isStable) tags.push("骨科-失去平衡跌倒");
-        if (currentSpeed < 5) tags.push("復健科-速度過慢或原地打滑");
-        else if (currentSpeed > 15 && hopRange > 5) tags.push("健康保健-速度快但顛簸");
-        else if (currentSpeed > 10 && isStable && hopRange <= 5) tags.push("健康保健-完美步伐");
-    }
-
     return {
         symptom: {
             isClashing: hasConflict,
@@ -1187,7 +1176,6 @@ export function getSimplifiedAnalytics() {
             hopRange: hasConflict ? 0 : parseFloat(hopRange.toFixed(1)),
             speed: currentSpeed
         },
-        diagnosis_tags: tags,
         params: {
             legLength: Math.round(L_leg / globalScale),
             footLength: Math.round(L_foot / globalScale),
@@ -1197,10 +1185,7 @@ export function getSimplifiedAnalytics() {
             phaseDiff: Math.round((phaseDiff / Math.PI) * 180),
             gearboxShift: parseFloat((gearboxShiftX * globalScale).toFixed(1)),
             motorTargetSpeed: parseFloat((Math.abs(simSpeed * 60)).toFixed(1)),
-            expectedNormalSpeed: Math.round(R * Math.abs(simSpeed * 60)),
-            bodyMass: bodyMass,
-            frictionCoeff: frictionCoeff,
-            gravityScale: parseFloat(gravityScale.toFixed(2))
+            expectedNormalSpeed: Math.round(R * Math.abs(simSpeed * 60))
         }
     };
 }

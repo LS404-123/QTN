@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { systemPrompt, userText, history, imageData } = req.body;
+  const { systemPrompt, userText, history, imageData, images } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
@@ -62,12 +62,14 @@ export default async function handler(req, res) {
   // 構建當前訊息的 parts
   const currentParts = [{ text: userText }];
   
-  // 如果有圖片，加入 inline_data
-  if (imageData) {
+  // 處理多張圖片
+  const imageList = images || (imageData ? [imageData] : []);
+  for (const imgData of imageList) {
+    if (!imgData) continue;
     // 移除 Base64 前綴 (如果有的話)
-    const base64Data = imageData.includes('base64,') 
-      ? imageData.split('base64,')[1] 
-      : imageData;
+    const base64Data = imgData.includes('base64,') 
+      ? imgData.split('base64,')[1] 
+      : imgData;
       
     currentParts.push({
       inline_data: {
@@ -85,6 +87,24 @@ export default async function handler(req, res) {
     generationConfig: {
       temperature: 0.7,
       maxOutputTokens: 200,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          mainText: {
+            type: "STRING",
+            description: "AI 的正文回覆（不超過 80 字，只能用簡單句，不能包含幾何/死點/干涉等禁用詞）"
+          },
+          suggestedReplies: {
+            type: "ARRAY",
+            items: {
+              type: "STRING"
+            },
+            description: "精確的 3 個建議回覆按鈕文字（例如 '💬 縮短腿長試試看？'）"
+          }
+        },
+        required: ["mainText", "suggestedReplies"]
+      }
     },
   };
 

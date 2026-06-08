@@ -1167,7 +1167,7 @@ const MAX_ANALYTICS_WINDOW = 120; // 2 seconds at 60fps
 /**
  * 萃取適合國小生的簡化指標
  */
-export function getSimplifiedAnalytics() {
+export function getDiagnosticState() {
     const recentHops = hopYHistory.slice(-MAX_ANALYTICS_WINDOW);
     const hopRange = recentHops.length > 0 ? (Math.max(...recentHops) - Math.min(...recentHops)) : 0;
 
@@ -1176,23 +1176,69 @@ export function getSimplifiedAnalytics() {
     const currentSpeed = (typeof displaySpeed !== 'undefined') ? parseFloat(displaySpeed.toFixed(1)) : 0;
     const isStable = (typeof isStableSupport !== 'undefined') ? isStableSupport : true;
 
+    // --- 1. Golden Rule Error ---
+    const s_val = S / globalScale;
+    const l_leg_val = L_leg / globalScale;
+    const l_blue_val = L_blue / globalScale;
+    const goldenRuleError = Math.abs(l_blue_val - Math.sqrt(s_val * s_val + l_leg_val * l_leg_val)).toFixed(2);
+    const isGoldenRuleViolated = parseFloat(goldenRuleError) > 5.0;
+
+    // --- 2. COM Hop Diagnosis ---
+    let expectedHop = 0;
+    if (R <= 6.5) expectedHop = 3.5;
+    else if (R <= 11.0) expectedHop = 6.0;
+    else if (R <= 15.5) expectedHop = 8.7;
+    else expectedHop = 11.2;
+
+    const actualHop = hasConflict ? 0 : parseFloat(hopRange.toFixed(1));
+    const hopDeviation = Math.max(0, actualHop - expectedHop).toFixed(1);
+    const hasAbnormalBobbing = actualHop > (expectedHop + 2.0);
+
+    // --- 3. Boundary Constraints ---
+    const rawPhaseDiff = Math.round((phaseDiff / Math.PI) * 180);
+    const limits = {
+        legLength: { min: 10, max: 60, val: Math.round(L_leg / globalScale) },
+        footLength: { min: 19, max: 100, val: Math.round(L_foot / globalScale) },
+        blueLink: { min: 40, max: 100, val: Math.round(L_blue / globalScale) },
+        bodyWidth: { min: 20, max: 80, val: Math.round(S / globalScale) },
+        crankRadius: { min: 6.5, max: 20, val: R },
+        phaseDiff: { min: 0, max: 180, val: rawPhaseDiff },
+        gearboxShift: { min: -10, max: 10, val: parseFloat((gearboxShiftX * globalScale).toFixed(1)) }
+    };
+
+    const limitsReached = {};
+    for (const [key, config] of Object.entries(limits)) {
+        if (config.val <= config.min) limitsReached[key] = "min";
+        else if (config.val >= config.max) limitsReached[key] = "max";
+    }
+
+    const speedMagnitude = parseFloat(document.getElementById('speedSlider')?.value || "0.1");
+    const batteryLevel = Math.max(0, Math.min(1, (speedMagnitude - 0.1) / 0.1));
+
     return {
         symptom: {
             isClashing: hasConflict,
             isStable: isStable,
-            hopRange: hasConflict ? 0 : parseFloat(hopRange.toFixed(1)),
-            speed: currentSpeed
+            hopRange: actualHop,
+            speed: currentSpeed,
+            goldenRuleError: parseFloat(goldenRuleError),
+            isGoldenRuleViolated: isGoldenRuleViolated,
+            expectedHop: expectedHop,
+            hopDeviation: parseFloat(hopDeviation),
+            hasAbnormalBobbing: hasAbnormalBobbing,
+            limitsReached: limitsReached
         },
         params: {
-            legLength: Math.round(L_leg / globalScale),
-            footLength: Math.round(L_foot / globalScale),
-            blueLink: Math.round(L_blue / globalScale),
-            bodyWidth: Math.round(S / globalScale),
-            crankRadius: Math.round(R),
-            phaseDiff: Math.round((phaseDiff / Math.PI) * 180),
-            gearboxShift: parseFloat((gearboxShiftX * globalScale).toFixed(1)),
+            legLength: limits.legLength.val,
+            footLength: limits.footLength.val,
+            blueLink: limits.blueLink.val,
+            bodyWidth: limits.bodyWidth.val,
+            crankRadius: limits.crankRadius.val,
+            phaseDiff: limits.phaseDiff.val,
+            gearboxShift: limits.gearboxShift.val,
             motorTargetSpeed: parseFloat((Math.abs(simSpeed * 60)).toFixed(1)),
-            expectedNormalSpeed: Math.round(R * Math.abs(simSpeed * 60))
+            expectedNormalSpeed: Math.round(R * Math.abs(simSpeed * 60)),
+            batteryPct: Math.round(batteryLevel * 100)
         }
     };
 }
@@ -1230,7 +1276,7 @@ slidersToWatch.forEach(id => {
 animate();
 
 // 將需要全域存取的函數掛載到 window
-window.getSimplifiedAnalytics = getSimplifiedAnalytics;
+window.getDiagnosticState = getDiagnosticState;
 window.getIsPlaying = () => isPlaying;
 window.startChronoRecording = (paramsJson, isContinuous = false) => {
     const promise = chronoRecorder.start(paramsJson, cameraX, theta, isPlaying, isContinuous, isClashing);
@@ -1270,7 +1316,7 @@ if (toggleChronoViewBtn && chronoDisplayCanvas) {
             chronoDisplayCtx.drawImage(chronoRecorder.chronoCanvas, 0, 0);
 
             // Auto start continuous recording
-            const paramsJson = JSON.stringify(window.getSimplifiedAnalytics ? window.getSimplifiedAnalytics() : {});
+            const paramsJson = JSON.stringify(window.getDiagnosticState ? window.getDiagnosticState() : {});
             chronoRecorder.cachedImage = null;
             chronoRecorder.cachedParamSignature = null;
 

@@ -1,7 +1,7 @@
 /**
  * AI Chat Logic - 🤖 小六 AI 診斷助手
  */
-import { getSimplifiedAnalytics } from '../simulation/simulation.js';
+import { getDiagnosticState } from '../simulation/simulation.js';
 import STATIC_COSTAR_PROMPT from '../../../AI_Chatbot_Framework_COSTAR_EN.md?raw';
 import KINEMATICS_REFERENCE from '../simulation/Kinematics_Reference.md?raw';
 
@@ -15,6 +15,7 @@ const ChatManager = {
     lastDiagnosisJson: null, // 紀錄上次的診斷狀態
     frustrationCount: 0, // 追蹤學生卡關程度
     lastMetrics: null,    // 儲存前一次的物理指標
+    lastSteadyImage: null, // 儲存修改前的穩定影像
 
     init() {
         console.log("[ChatManager] Initializing...");
@@ -220,15 +221,8 @@ const ChatManager = {
     async getAIResponse(userText) {
         this.isWaiting = true;
 
-        const analytics = getSimplifiedAnalytics();
+        const analytics = getDiagnosticState();
         const currentParams = analytics.params;
-
-        // 計算預期速度與電量，並注入 currentParams 以確保滑桿變動時能觸發重傳
-        const speedMagnitude = parseFloat(document.getElementById('speedSlider')?.value || "0.1");
-        const batteryLevel = Math.max(0, Math.min(1, (speedMagnitude - 0.1) / 0.1));
-        currentParams.batteryPct = Math.round(batteryLevel * 100);
-        const expectedSpeed = (28.7 + 32 * batteryLevel).toFixed(1);
-
         const currentParamsJson = JSON.stringify(currentParams);
 
         // --- 影像節流控制 (Image Throttling) ---
@@ -244,9 +238,16 @@ const ChatManager = {
             this.history.length < 3;
 
         this.updateStatus("思考中...");
-        let imageData = null;
+        let imagesToSend = [];
         if (shouldSendImage) {
-            imageData = await this.captureCanvas(currentParamsJson);
+            const newImage = await this.captureCanvas(currentParamsJson);
+            if (this.lastSteadyImage) {
+                imagesToSend.push(this.lastSteadyImage);
+            }
+            if (newImage) {
+                imagesToSend.push(newImage);
+            }
+            this.lastSteadyImage = newImage;
         }
         
         this.lastIsClashing = analytics.symptom.isClashing;
@@ -257,7 +258,8 @@ const ChatManager = {
 
         // --- 當前背景數據 (Dynamic Context) ---
         let robotStateXml = "";
-        let visualPrompt = imageData ? "\n  <Visual_Instruction>請觀察附件中的連續攝影 (Chronophotograph) ，依據腳印的分布與機身的高低起伏來輔助你的診斷。</Visual_Instruction>" : "";
+        let visualPrompt = imagesToSend.length > 1 ? "\n  <Visual_Instruction>請觀察附件中的連續攝影，圖1 為修改前的狀態，圖2 為修改後的狀態。請對比腳印的分布與機身高低起伏，判斷學生的改動是否改善了步態。</Visual_Instruction>" 
+                         : (imagesToSend.length === 1 ? "\n  <Visual_Instruction>請觀察附件中的連續攝影，依據腳印的分布與機身的高低起伏來輔助你的診斷。</Visual_Instruction>" : "");
 
         // --- 計算參數變動差異 (Parameter Delta) ---
         const baseline = {
@@ -284,42 +286,24 @@ const ChatManager = {
             hopRange: analytics.symptom.hopRange
         };
 
-        // 參數極限值檢測與標記
-        const limits = {
-            legLength: { min: 10, max: 60 },
-            footLength: { min: 19, max: 100 },
-            blueLink: { min: 40, max: 100 },
-            bodyWidth: { min: 20, max: 80 },
-            crankRadius: { min: 6, max: 20 },
-            phaseDiff: { min: 0, max: 180 },
-            gearboxShift: { min: -10, max: 10 }
-        };
         const getParamStr = (key, name) => {
             const val = currentParams[key];
-            const lim = limits[key];
-            if (lim) {
-                if (val <= lim.min) return `${name}=${val} (已達最小值 ${lim.min})`;
-                if (val >= lim.max) return `${name}=${val} (已達最大值 ${lim.max})`;
-            }
+            const limitStatus = analytics.symptom.limitsReached[key];
+            if (limitStatus === "min") return `${name}=${val} (已達最小值)`;
+            if (limitStatus === "max") return `${name}=${val} (已達最大值)`;
             return `${name}=${val}`;
         };
 
         // 只有在參數變動、有結構衝突、或是歷史紀錄很短時，才發送完整物理數據
         if (currentParamsJson !== this.lastSentParamsJson || analytics.symptom.isClashing || this.history.length < 3) {
-            // 在前端預先計算黃金比例幾何誤差，避免 AI 產生計算幻覺
-            const S = currentParams.bodyWidth;
-            const L_leg = currentParams.legLength;
-            const L_blue = currentParams.blueLink;
-            const goldenRuleError = Math.abs(L_blue - Math.sqrt(S * S + L_leg * L_leg)).toFixed(2);
-
             robotStateXml = `
 <Robot_State>
-  <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 實際速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm, 目前電量=${currentParams.batteryPct}%, 該電量預期速度=${expectedSpeed} mm/s</Analytics_Data>
+  <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 實際速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm, 目前電量=${currentParams.batteryPct}%, 該電量預期速度=${currentParams.expectedNormalSpeed} mm/s</Analytics_Data>
   <Parameter_Delta>當前滑桿偏離基準狀況：${parameterDeltaStr} | 物理指標變化：${metricsDeltaStr}</Parameter_Delta>
-  <Golden_Rule_Error>${goldenRuleError}</Golden_Rule_Error>
+  <Golden_Rule_Error>${analytics.symptom.goldenRuleError} (違反=${analytics.symptom.isGoldenRuleViolated})</Golden_Rule_Error>
   <Mechanical_Params>${getParamStr('legLength', '腿長')}, ${getParamStr('footLength', '腳長/機器人高度')}, ${getParamStr('blueLink', '藍色直桿')}, ${getParamStr('bodyWidth', '身體半寬')}, ${getParamStr('crankRadius', '曲柄半徑')}, ${getParamStr('phaseDiff', '相位差')}°, ${getParamStr('gearboxShift', '齒輪箱位移')}</Mechanical_Params>
-  <Performance_Baseline>馬達轉速=${currentParams.motorTargetSpeed} rad/s, 理論空載速度(Expected Normal Speed)=${currentParams.expectedNormalSpeed} mm/s</Performance_Baseline>
-  <Posture_Criteria>判斷姿勢：請比較「實際速度」與「該電量預期速度」。若實際速度低於預期速度，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>${visualPrompt}
+  <Performance_Baseline>馬達轉速=${currentParams.motorTargetSpeed} rad/s, 理論空載速度(Expected Normal Speed)=${currentParams.expectedNormalSpeed} mm/s, 預期重心起伏=${analytics.symptom.expectedHop} mm, 異常顛簸=${analytics.symptom.hasAbnormalBobbing}</Performance_Baseline>
+  <Posture_Criteria>判斷姿勢：請比較「實際速度」與「理論空載速度」。若實際速度低於理論值，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>${visualPrompt}
 </Robot_State>`;
             this.lastSentParamsJson = currentParamsJson;
         } else {
@@ -360,27 +344,24 @@ Reason: ${throttlingReason}
 ${historyText || '(無歷史紀錄)'}
 
 [DYNAMIC CONTEXT & USER INPUT]
-${finalUserText}${imageData ? `\n\n[IMAGE SENT]\n<img src="${imageData}" style="width:100%; border-radius:8px; margin-top:10px; border:1px solid #444;">` : ''}`
+${finalUserText}${imagesToSend.length > 0 ? `\n\n[IMAGES SENT: ${imagesToSend.length}]` : ''}`
         });
         this.currentLogIndex = this.debugHistory.length - 1;
         this.renderDebugCard();
 
         try {
-            const rawResponse = await this.callGeminiAPI(systemPrompt, finalUserText, historyToSend, imageData);
+            const rawResponse = await this.callGeminiAPI(systemPrompt, finalUserText, historyToSend, imagesToSend);
             
-            // Stage 3: 防禦性解析器 (Defensive Parser)
-            const lines = rawResponse.split('\n');
-            const mainTextLines = [];
-            const options = [];
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                // Match exact symbol or standard markdown options as fallback
-                if (trimmed.startsWith('💬') || trimmed.startsWith('- 💬')) {
-                    options.push(trimmed.replace(/^- /, '').trim());
-                } else if (trimmed !== '' && !trimmed.includes('建議回覆選項') && !trimmed.startsWith('---')) {
-                    mainTextLines.push(trimmed);
-                }
+            // Stage 3: 防禦性解析器升級為 Structured Outputs (JSON Schema)
+            let mainText = "";
+            let options = [];
+            try {
+                const parsed = JSON.parse(rawResponse);
+                mainText = parsed.mainText || "系統回覆解析異常。";
+                options = parsed.suggestedReplies || [];
+            } catch (e) {
+                console.error("JSON Parse Error:", e);
+                mainText = rawResponse; // 降級顯示
             }
 
             // 安全隔離網觸發狀態 (Safety Guardrail UX) - 若無按鈕則加上保底按鈕
@@ -390,7 +371,8 @@ ${finalUserText}${imageData ? `\n\n[IMAGE SENT]\n<img src="${imageData}" style="
                 options.push('💬 回到機器人實驗');
             }
 
-            const mainText = mainTextLines.join('<br>');
+            // 如果使用 HTML 顯示，需要處理換行
+            mainText = mainText.replace(/\n/g, '<br>');
             this.addMessage('ai', mainText, options);
 
         } catch (error) {
@@ -405,14 +387,14 @@ ${finalUserText}${imageData ? `\n\n[IMAGE SENT]\n<img src="${imageData}" style="
 
 
 
-    async callGeminiAPI(systemPrompt, userText, history = [], imageData = null) {
+    async callGeminiAPI(systemPrompt, userText, history = [], images = []) {
         // 改為呼叫 Vercel Serverless Function
         const url = '/api/chat';
 
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ systemPrompt, userText, history, imageData })
+            body: JSON.stringify({ systemPrompt, userText, history, images })
         });
 
         if (!response.ok) {

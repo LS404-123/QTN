@@ -227,7 +227,7 @@ const ChatManager = {
         const speedMagnitude = parseFloat(document.getElementById('speedSlider')?.value || "0.1");
         const batteryLevel = Math.max(0, Math.min(1, (speedMagnitude - 0.1) / 0.1));
         currentParams.batteryPct = Math.round(batteryLevel * 100);
-        const expectedSpeed = (28.7 + 32 * batteryLevel).toFixed(1);
+        const expectedSpeed = (29.5 + batteryLevel * 32.5).toFixed(1);
 
         const currentParamsJson = JSON.stringify(currentParams);
 
@@ -308,10 +308,10 @@ const ChatManager = {
         if (currentParamsJson !== this.lastSentParamsJson || analytics.symptom.isClashing || this.history.length < 3) {
             robotStateXml = `
 <Robot_State>
-  <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 實際速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm, 目前電量=${currentParams.batteryPct}%, 該電量預期速度=${expectedSpeed} mm/s</Analytics_Data>
+  <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 實際速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm, 目前電量=${currentParams.batteryPct}%, 該電量預期速度(以第一孔 R=6.5mm 為基準)=${expectedSpeed} mm/s</Analytics_Data>
   <Parameter_Delta>當前滑桿偏離基準狀況：${parameterDeltaStr} | 物理指標變化：${metricsDeltaStr}</Parameter_Delta>
   <Mechanical_Params>${getParamStr('legLength', '腳長')}, ${getParamStr('footLength', '機器人高度')}, ${getParamStr('blueLink', '藍色直桿')}, ${getParamStr('bodyWidth', '身體半寬')}, ${getParamStr('crankRadius', '曲柄半徑 R')}, ${getParamStr('phaseDiff', '相位差')}°, ${getParamStr('gearboxShift', '齒輪箱位移')}</Mechanical_Params>
-  <Performance_Baseline>馬達轉速=${currentParams.motorTargetSpeed} rad/s, 理論空載速度(Expected Normal Speed)=${currentParams.expectedNormalSpeed} mm/s</Performance_Baseline>
+  <Performance_Baseline>馬達轉速=${currentParams.motorTargetSpeed} rad/s, 理論空載速度(Expected Normal Speed, 第一孔 R=6.5mm)=${currentParams.expectedNormalSpeed} mm/s</Performance_Baseline>
   <Posture_Criteria>判斷姿勢：請比較「實際速度」與「該電量預期速度」。若實際速度低於預期速度，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>${visualPrompt}
 </Robot_State>`;
             this.lastSentParamsJson = currentParamsJson;

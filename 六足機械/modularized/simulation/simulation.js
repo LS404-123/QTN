@@ -1237,7 +1237,7 @@ export function getDiagnosticState() {
             phaseDiff: limits.phaseDiff.val,
             gearboxShift: limits.gearboxShift.val,
             motorTargetSpeed: parseFloat((Math.abs(simSpeed * 60)).toFixed(1)),
-            expectedNormalSpeed: Math.round(R * Math.abs(simSpeed * 60)),
+            expectedNormalSpeed: parseFloat((29.5 + batteryLevel * (62.0 - 29.5)).toFixed(1)),
             batteryPct: Math.round(batteryLevel * 100)
         }
     };

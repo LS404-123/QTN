@@ -16,6 +16,7 @@ export class ChronoRecorder {
         
         this.frameCount = 0;
         this.maxFrames = framesPerCycle;
+        this.defaultMaxFrames = framesPerCycle;
         // e.g. 360 / 6 = 60 degrees per capture
         this.targetThetaInterval = (Math.PI * 2) / this.maxFrames; 
         
@@ -25,13 +26,21 @@ export class ChronoRecorder {
         this.frames = []; // Queue to hold snapshots
     }
 
-    start(currentParamsJson, currentCameraX, currentTheta, isPlaying, isContinuous = false) {
+    start(currentParamsJson, currentCameraX, currentTheta, isPlaying, isContinuous = false, isClashing = false) {
         return new Promise((resolve) => {
             // Caching Mechanism: Return immediately if parameters are unchanged
             if (this.cachedImage && this.cachedParamSignature === currentParamsJson && isPlaying && !isContinuous) {
                 resolve(this.cachedImage);
                 return;
             }
+
+            // Adjust maxFrames based on clashing state
+            if (!isContinuous && isClashing) {
+                this.maxFrames = 1;
+            } else {
+                this.maxFrames = this.defaultMaxFrames;
+            }
+            this.targetThetaInterval = (Math.PI * 2) / this.maxFrames; 
 
             // Initialization for a new recording
             this.chronoCtx.fillStyle = '#1e1e1e';
@@ -156,44 +165,34 @@ export class ChronoRecorder {
         const sx = globalMinX;
         const sy = globalMinY;
 
-        // Redraw grid (3x2)
+        // Redraw grid or single image
         this.chronoCtx.fillStyle = '#1e1e1e';
         this.chronoCtx.fillRect(0, 0, this.chronoCanvas.width, this.chronoCanvas.height);
         
-        const pad = 0;
-        const w = this.chronoCanvas.width / 3;
-        const h = this.chronoCanvas.height / 2;
-        const innerW = w;
-        const innerH = h;
-
-        this.chronoCtx.save();
-        for (let i = 0; i < this.frames.length; i++) {
-            const col = i % 3;
-            const row = Math.floor(i / 3);
-            const cellX = col * w;
-            const cellY = row * h;
+        if (this.maxFrames === 1) {
+            const innerW = this.chronoCanvas.width;
+            const innerH = this.chronoCanvas.height;
+            const cellX = 0;
+            const cellY = 0;
             
-            // Draw dark background for the inner box
+            // Draw dark background
             this.chronoCtx.fillStyle = '#111111';
-            this.chronoCtx.fillRect(cellX, cellY, w, h);
-
-            // cropW, cropH, sx, sy are dynamically determined above
+            this.chronoCtx.fillRect(cellX, cellY, innerW, innerH);
 
             // Preserve aspect ratio to prevent distortion
             const scale = Math.min(innerW / cropW, innerH / cropH);
             const drawW = cropW * scale;
             const drawH = cropH * scale;
 
-            // Center the image inside the padded cell
-            const dx = cellX + pad + (innerW - drawW) / 2;
-            const dy = cellY + pad + (innerH - drawH) / 2;
+            // Center the image
+            const dx = cellX + (innerW - drawW) / 2;
+            const dy = cellY + (innerH - drawH) / 2;
 
             // Draw image preserving aspect ratio
-            this.chronoCtx.drawImage(this.frames[i].canvas, sx, sy, cropW, cropH, dx, dy, drawW, drawH);
+            this.chronoCtx.drawImage(this.frames[0].canvas, sx, sy, cropW, cropH, dx, dy, drawW, drawH);
             
             // Draw Groundline
             if (targetGy > 0) {
-                // Groundline relative to crop is (targetGy - sy). We scale this by our calculated scale.
                 const groundYInCrop = targetGy - sy;
                 const scaledTargetGy = dy + groundYInCrop * scale;
                 
@@ -205,17 +204,73 @@ export class ChronoRecorder {
                 this.chronoCtx.stroke();
             }
 
-            // Add text tag
+            // Draw premium alert/warning banner on the image
+            this.chronoCtx.save();
+            this.chronoCtx.fillStyle = 'rgba(239, 68, 68, 0.85)'; // semi-transparent red
+            this.chronoCtx.fillRect(20, 20, 260, 40);
+            
             this.chronoCtx.fillStyle = '#ffffff';
-            this.chronoCtx.font = '600 14px "Inter", sans-serif';
-            this.chronoCtx.fillText(`Frame ${i + 1}`, cellX + 10, cellY + 20);
+            this.chronoCtx.font = 'bold 15px "Inter", sans-serif';
+            this.chronoCtx.textAlign = 'left';
+            this.chronoCtx.fillText('⚠️ Clash Detected / 機構干涉', 35, 45);
+            this.chronoCtx.restore();
 
-            // Add grid border
-            this.chronoCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-            this.chronoCtx.lineWidth = 1;
-            this.chronoCtx.strokeRect(cellX, cellY, w, h);
+        } else {
+            const pad = 0;
+            const w = this.chronoCanvas.width / 3;
+            const h = this.chronoCanvas.height / 2;
+            const innerW = w;
+            const innerH = h;
+
+            this.chronoCtx.save();
+            for (let i = 0; i < this.frames.length; i++) {
+                const col = i % 3;
+                const row = Math.floor(i / 3);
+                const cellX = col * w;
+                const cellY = row * h;
+                
+                // Draw dark background for the inner box
+                this.chronoCtx.fillStyle = '#111111';
+                this.chronoCtx.fillRect(cellX, cellY, w, h);
+
+                // Preserve aspect ratio to prevent distortion
+                const scale = Math.min(innerW / cropW, innerH / cropH);
+                const drawW = cropW * scale;
+                const drawH = cropH * scale;
+
+                // Center the image inside the padded cell
+                const dx = cellX + pad + (innerW - drawW) / 2;
+                const dy = cellY + pad + (innerH - drawH) / 2;
+
+                // Draw image preserving aspect ratio
+                this.chronoCtx.drawImage(this.frames[i].canvas, sx, sy, cropW, cropH, dx, dy, drawW, drawH);
+                
+                // Draw Groundline
+                if (targetGy > 0) {
+                    // Groundline relative to crop is (targetGy - sy). We scale this by our calculated scale.
+                    const groundYInCrop = targetGy - sy;
+                    const scaledTargetGy = dy + groundYInCrop * scale;
+                    
+                    this.chronoCtx.beginPath();
+                    this.chronoCtx.moveTo(cellX, scaledTargetGy);
+                    this.chronoCtx.lineTo(cellX + innerW, scaledTargetGy);
+                    this.chronoCtx.strokeStyle = 'rgba(34, 197, 94, 0.8)'; // Green color
+                    this.chronoCtx.lineWidth = 2;
+                    this.chronoCtx.stroke();
+                }
+
+                // Add text tag
+                this.chronoCtx.fillStyle = '#ffffff';
+                this.chronoCtx.font = '600 14px "Inter", sans-serif';
+                this.chronoCtx.fillText(`Frame ${i + 1}`, cellX + 10, cellY + 20);
+
+                // Add grid border
+                this.chronoCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                this.chronoCtx.lineWidth = 1;
+                this.chronoCtx.strokeRect(cellX, cellY, w, h);
+            }
+            this.chronoCtx.restore();
         }
-        this.chronoCtx.restore();
 
         this.frameCount++;
         if (this.frameCount === this.maxFrames) {

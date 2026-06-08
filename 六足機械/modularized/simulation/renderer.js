@@ -32,25 +32,26 @@ export class HexapodRenderer {
         };
     }
 
-    drawSVGLink(p1, p2, svgPath, h1x, h1y, h2x, h2y, strokeColor, fillColor, isFar, targetCtx, state) {
+    drawSVGLink(p1, p2, svgPath, h1x, h1y, h2x, h2y, strokeColor, fillColor, isFar, targetCtx, state, customScaleX = null) {
         if (!p1 || !p2 || !svgPath) return;
         const m1 = this.mapCoords(p1, state), m2 = this.mapCoords(p2, state);
         const dx = m2.x - m1.x, dy = m2.y - m1.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         const svgDist = Math.sqrt(Math.pow(h2x - h1x, 2) + Math.pow(h2y - h1y, 2));
-        const scale = dist / svgDist;
+        const scaleY = dist / svgDist;
+        const scaleX = customScaleX !== null ? customScaleX : scaleY;
         const angle = Math.atan2(dy, dx);
         const svgAngle = Math.atan2(h2y - h1y, h2x - h1x);
 
         targetCtx.save();
         targetCtx.translate(m1.x, m1.y);
         targetCtx.rotate(angle - svgAngle);
-        targetCtx.scale(scale, scale);
+        targetCtx.scale(scaleX, scaleY);
         targetCtx.translate(-h1x, -h1y);
 
         targetCtx.globalAlpha = 1.0;
         targetCtx.strokeStyle = strokeColor;
-        targetCtx.lineWidth = 1.5 / scale;
+        targetCtx.lineWidth = 1.5 / scaleX;
         if (fillColor) {
             targetCtx.fillStyle = fillColor;
             targetCtx.fill(svgPath);
@@ -69,6 +70,46 @@ export class HexapodRenderer {
         targetCtx.lineWidth = width;
         targetCtx.lineCap = 'round';
         targetCtx.stroke();
+    }
+
+    drawProceduralRod(p1, p2, strokeColor, fillColor, targetCtx, state, customScaleX) {
+        if (!p1 || !p2) return;
+        const m1 = this.mapCoords(p1, state), m2 = this.mapCoords(p2, state);
+        const dx = m2.x - m1.x, dy = m2.y - m1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx);
+
+        const r = 5 * customScaleX;
+        const rHole = 1.5 * customScaleX;
+
+        targetCtx.save();
+        targetCtx.translate(m1.x, m1.y);
+        targetCtx.rotate(angle - Math.PI / 2);
+
+        targetCtx.beginPath();
+        targetCtx.arc(0, 0, r, Math.PI, 0);
+        targetCtx.lineTo(r, dist);
+        targetCtx.arc(0, dist, r, 0, Math.PI);
+        targetCtx.closePath();
+
+        targetCtx.globalAlpha = 1.0;
+        targetCtx.strokeStyle = strokeColor;
+        targetCtx.lineWidth = 1.5;
+        if (fillColor) {
+            targetCtx.fillStyle = fillColor;
+            targetCtx.fill();
+        }
+        targetCtx.stroke();
+
+        targetCtx.beginPath();
+        targetCtx.arc(0, 0, rHole, 0, Math.PI * 2);
+        targetCtx.stroke();
+
+        targetCtx.beginPath();
+        targetCtx.arc(0, dist, rHole, 0, Math.PI * 2);
+        targetCtx.stroke();
+
+        targetCtx.restore();
     }
 
     drawPoint(p, color, radius, targetCtx, state) {
@@ -98,14 +139,15 @@ export class HexapodRenderer {
         const drawRods = () => {
             const rodFill = isFar ? '#93c5fd' : '#3b82f6';
             const rodStroke = isFar ? '#60a5fa' : '#1d4ed8';
+            const rodNominalScaleX = (55.0 * state.globalScale * state.scale) / 92.0;
             if (isFar) {
-                this.drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx, state);
-                this.drawSVGLink(state.Pf, data.MT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx, state);
-                this.drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx, state);
+                this.drawProceduralRod(data.FT, data.ML, rodStroke, rodFill, targetCtx, state, rodNominalScaleX);
+                this.drawProceduralRod(state.Pf, data.MT, rodStroke, rodFill, targetCtx, state, rodNominalScaleX);
+                this.drawProceduralRod(data.ML, data.RT, rodStroke, rodFill, targetCtx, state, rodNominalScaleX);
             } else {
-                this.drawSVGLink(data.ML, data.RT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx, state);
-                this.drawSVGLink(state.Pf, data.MT, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx, state);
-                this.drawSVGLink(data.FT, data.ML, rodSVGPath, 10, 10, 10, 102, rodStroke, rodFill, isFar, targetCtx, state);
+                this.drawProceduralRod(data.ML, data.RT, rodStroke, rodFill, targetCtx, state, rodNominalScaleX);
+                this.drawProceduralRod(state.Pf, data.MT, rodStroke, rodFill, targetCtx, state, rodNominalScaleX);
+                this.drawProceduralRod(data.FT, data.ML, rodStroke, rodFill, targetCtx, state, rodNominalScaleX);
             }
         };
 

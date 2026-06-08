@@ -769,6 +769,13 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
             ctx.font = 'bold 22px system-ui';
             ctx.textAlign = 'center';
             ctx.fillText(window.simulationErrorMsg, canvas.width / 2, canvas.height / 2);
+
+            // Draw it on robotCanvas too if we are recording
+            robotCtx.clearRect(0, 0, robotCanvas.width, robotCanvas.height);
+            robotCtx.fillStyle = '#f87171';
+            robotCtx.font = 'bold 22px system-ui';
+            robotCtx.textAlign = 'center';
+            robotCtx.fillText(window.simulationErrorMsg, robotCanvas.width / 2, robotCanvas.height / 2);
         }
 
         // 8. 繪製統計數據面板 (僅在管理員模式下顯示)
@@ -782,7 +789,7 @@ function renderFrame(currentTheta, recordPath, dt = 0.016) {
         }
 
         // Live Trailing Capture Hook for Chronophotography
-        if (chronoRecorder.isRecording && !isClashing) {
+        if (chronoRecorder.isRecording) {
             window.simulationErrorMsg = null;
             chronoRecorder.captureFrameHook(currentTheta, robotCanvas, cameraX, scale, targetGy);
         }
@@ -1226,7 +1233,7 @@ animate();
 window.getSimplifiedAnalytics = getSimplifiedAnalytics;
 window.getIsPlaying = () => isPlaying;
 window.startChronoRecording = (paramsJson, isContinuous = false) => {
-    const promise = chronoRecorder.start(paramsJson, cameraX, theta, isPlaying, isContinuous);
+    const promise = chronoRecorder.start(paramsJson, cameraX, theta, isPlaying, isContinuous, isClashing);
     // Force the first frame capture immediately if recording just started
     if (chronoRecorder.isRecording) {
         chronoRecorder.doCapture(robotCanvas, cameraX, scale, targetGy);

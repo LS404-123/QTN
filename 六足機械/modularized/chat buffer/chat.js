@@ -89,20 +89,27 @@ const ChatManager = {
         // Stage 3: 動態按鈕渲染
         if (this.suggestedOptionsContainer) {
             this.suggestedOptionsContainer.innerHTML = ''; // 每次有新訊息先清空
+            this.suggestedOptionsContainer.style.display = 'none';
             if (options && options.length > 0) {
+                this.suggestedOptionsContainer.style.display = 'flex';
                 options.forEach(optText => {
                     const btn = document.createElement('button');
                     btn.className = 'suggested-reply-btn';
-                    // Inline styles for fast prototyping
-                    btn.style.padding = '8px 14px';
-                    btn.style.borderRadius = '20px';
+                    // Inline styles for horizontal row layout
+                    btn.style.flex = '1 1 calc(33.33% - 6px)';
+                    btn.style.minWidth = '0';
+                    btn.style.padding = '6px 8px';
+                    btn.style.borderRadius = '12px';
                     btn.style.border = '1px solid rgba(74, 222, 128, 0.8)';
                     btn.style.background = 'rgba(74, 222, 128, 0.15)';
                     btn.style.color = '#166534'; // 深綠色，確保在淺色背景上顯示清楚
                     btn.style.fontWeight = '600';
                     btn.style.cursor = 'pointer';
-                    btn.style.textAlign = 'left';
-                    btn.style.fontSize = '0.9rem';
+                    btn.style.textAlign = 'center';
+                    btn.style.fontSize = '0.78rem';
+                    btn.style.lineHeight = '1.2';
+                    btn.style.whiteSpace = 'normal';
+                    btn.style.wordBreak = 'break-word';
                     btn.style.transition = 'all 0.2s';
                     
                     btn.onmouseover = () => btn.style.background = 'rgba(74, 222, 128, 0.3)';
@@ -111,6 +118,7 @@ const ChatManager = {
                     btn.innerText = optText;
                     btn.onclick = () => {
                         this.suggestedOptionsContainer.innerHTML = '';
+                        this.suggestedOptionsContainer.style.display = 'none';
                         this.handleSendMessage(optText.replace('💬', '').trim());
                     };
                     this.suggestedOptionsContainer.appendChild(btn);
@@ -137,7 +145,7 @@ const ChatManager = {
 
         if (dotEl) {
             dotEl.classList.remove('thinking');
-            if (text.includes("看診中")) dotEl.classList.add('thinking');
+            if (text.includes("思考中")) dotEl.classList.add('thinking');
         }
     },
 
@@ -152,6 +160,7 @@ const ChatManager = {
         // 當使用者自己送出時，也清空選項
         if (this.suggestedOptionsContainer && !forcedText) {
             this.suggestedOptionsContainer.innerHTML = '';
+            this.suggestedOptionsContainer.style.display = 'none';
         }
 
         // Stage 4: 輸入驗證與防溢位 (Input Sanitization)
@@ -234,7 +243,7 @@ const ChatManager = {
             hasVisualKeyword || 
             this.history.length < 3;
 
-        this.updateStatus("看診中...");
+        this.updateStatus("思考中...");
         let imageData = null;
         if (shouldSendImage) {
             imageData = await this.captureCanvas(currentParamsJson);
@@ -383,7 +392,7 @@ ${finalUserText}${imageData ? `\n\n[IMAGE SENT]\n<img src="${imageData}" style="
         }
 
         this.isWaiting = false;
-        this.updateStatus("醫生待命中...");
+        this.updateStatus("老師待命中...");
     },
 
 

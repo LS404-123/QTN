@@ -42,6 +42,11 @@ const ChatManager = {
         this.prevLogBtn?.addEventListener('click', () => this.showLog(this.currentLogIndex - 1));
         this.nextLogBtn?.addEventListener('click', () => this.showLog(this.currentLogIndex + 1));
 
+        // 註冊全域滑桿監聽，當滑桿變動時顯示「💬 現在這樣呢？」
+        window.onSliderChanged = (id, value) => {
+            this.showHowAboutNowButton();
+        };
+
         console.log("[ChatManager] Ready!");
     },
 
@@ -128,16 +133,101 @@ const ChatManager = {
         const timeStr = new Date(log.timestamp).toLocaleTimeString();
         const formattedContent = this.formatDebugPrompt(log.content);
 
+        // 1. Token 消耗與快取狀態
+        let tokenHtml = '';
+        if (log.usageMetadata) {
+            const cacheLabel = log.cacheStatus ? ` | 快取狀態: ${log.cacheStatus}` : '';
+            tokenHtml = `
+                <div class="debug-tokens" style="font-size: 11px; color: #34c759; margin-bottom: 8px; border-bottom: 1px dashed rgba(255,255,255,0.15); padding-bottom: 6px; font-weight: bold; font-family: monospace;">
+                    Token 消耗: 輸入 ${log.usageMetadata.promptTokenCount} | 輸出 ${log.usageMetadata.candidatesTokenCount} | 總計 ${log.usageMetadata.totalTokenCount}${cacheLabel}
+                </div>
+            `;
+        } else if (log.apiError) {
+            tokenHtml = `
+                <div class="debug-tokens" style="font-size: 11px; color: #ff453a; margin-bottom: 8px; border-bottom: 1px dashed rgba(255,255,255,0.15); padding-bottom: 6px; font-weight: bold; font-family: monospace;">
+                    連線狀態: ⚠️ 傳輸失敗 (${log.apiError})
+                </div>
+            `;
+        }
+
+        // 2. 傳送的圖片縮圖顯示
+        let imagesHtml = '';
+        if (log.images && log.images.length > 0) {
+            imagesHtml = `
+                <div class="debug-images-container" style="display: flex; gap: 12px; margin-top: 12px; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 10px;">
+                    ${log.images.map((imgBase64, idx) => `
+                        <div style="flex: 1; text-align: center; max-width: 200px;">
+                            <div style="font-size: 11px; color: #94a3b8; margin-bottom: 4px; font-family: monospace; font-weight: bold;">
+                                圖 ${idx + 1} (${idx === 0 && log.images.length > 1 ? '修改前' : '修改後'})
+                            </div>
+                            <img src="${imgBase64}" style="width: 100%; border-radius: 6px; border: 1px solid rgba(255,255,255,0.25); background: #222; box-shadow: 0 4px 12px rgba(0,0,0,0.5);" />
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
         this.debugCardContainer.innerHTML = `
             <div class="debug-card">
                 <span class="debug-time">[${timeStr}] 📡 傳輸批次 #${this.currentLogIndex + 1}</span>
+                ${tokenHtml}
                 ${formattedContent}
+                ${imagesHtml}
             </div>
         `;
 
         if (this.logCounter) {
             this.logCounter.innerText = `${this.currentLogIndex + 1} / ${this.debugHistory.length}`;
         }
+    },
+
+    /**
+     * 當滑桿改變時，在選項區顯示「💬 現在這樣呢？」按鈕
+     */
+    showHowAboutNowButton() {
+        if (!this.suggestedOptionsContainer) return;
+        
+        // 檢查是否已經有這個按鈕，避免重複添加
+        const existingButtons = Array.from(this.suggestedOptionsContainer.querySelectorAll('.suggested-reply-btn'));
+        const hasHowAboutNow = existingButtons.some(btn => btn.innerText.includes('現在這樣呢？'));
+        
+        if (hasHowAboutNow) return;
+
+        // 如果容器目前是隱藏的，開啟顯示
+        if (this.suggestedOptionsContainer.style.display === 'none' || !this.suggestedOptionsContainer.style.display) {
+            this.suggestedOptionsContainer.style.display = 'flex';
+        }
+
+        const btn = document.createElement('button');
+        btn.className = 'suggested-reply-btn';
+        
+        btn.style.flex = '1 1 calc(33.33% - 6px)';
+        btn.style.minWidth = '120px';
+        btn.style.padding = '6px 8px';
+        btn.style.borderRadius = '12px';
+        btn.style.border = '1px solid rgba(74, 222, 128, 0.8)';
+        btn.style.background = 'rgba(74, 222, 128, 0.15)';
+        btn.style.color = '#166534';
+        btn.style.fontWeight = '600';
+        btn.style.cursor = 'pointer';
+        btn.style.textAlign = 'center';
+        btn.style.fontSize = '0.78rem';
+        btn.style.lineHeight = '1.2';
+        btn.style.whiteSpace = 'normal';
+        btn.style.wordBreak = 'break-word';
+        btn.style.transition = 'all 0.2s';
+        
+        btn.onmouseover = () => btn.style.background = 'rgba(74, 222, 128, 0.3)';
+        btn.onmouseout = () => btn.style.background = 'rgba(74, 222, 128, 0.15)';
+        
+        btn.innerText = '💬 現在這樣呢？';
+        btn.onclick = () => {
+            this.suggestedOptionsContainer.innerHTML = '';
+            this.suggestedOptionsContainer.style.display = 'none';
+            this.handleSendMessage('現在這樣呢？');
+        };
+
+        this.suggestedOptionsContainer.appendChild(btn);
     },
 
     /**
@@ -371,7 +461,7 @@ const ChatManager = {
 <Robot_State>
   <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 實際速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm, 目前電量=${currentParams.batteryPct}%, 該電量預期速度=${currentParams.expectedNormalSpeed} mm/s</Analytics_Data>
   <Parameter_Delta>當前滑桿偏離基準狀況：${parameterDeltaStr} | 物理指標變化：${metricsDeltaStr}</Parameter_Delta>
-  <Golden_Rule_Error>${analytics.symptom.goldenRuleError} (違反=${analytics.symptom.isGoldenRuleViolated})</Golden_Rule_Error>
+  <Golden_Rule_Error>${analytics.symptom.goldenRuleError} (違反=${analytics.symptom.isGoldenRuleViolated}，公式：藍桿長度 - 理想幾何長度。正值代表藍桿太長，負值代表藍桿太短)</Golden_Rule_Error>
   <Mechanical_Params>${getParamStr('legLength', '腿長')}, ${getParamStr('footLength', '腳長/機器人高度')}, ${getParamStr('blueLink', '藍色直桿')}, ${getParamStr('bodyWidth', '身體半寬')}, ${getParamStr('crankRadius', '曲柄半徑')}, ${getParamStr('phaseDiff', '相位差')}°, ${getParamStr('gearboxShift', '齒輪箱位移')}</Mechanical_Params>
   <Performance_Baseline>馬達轉速=${currentParams.motorTargetSpeed} rad/s, 理論空載速度(Expected Normal Speed)=${currentParams.expectedNormalSpeed} mm/s, 預期重心起伏=${analytics.symptom.expectedHop} mm, 異常顛簸=${analytics.symptom.hasAbnormalBobbing}</Performance_Baseline>
   <Posture_Criteria>判斷姿勢：請比較「實際速度」與「理論空載速度」。若實際速度低於理論值，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>${visualPrompt}
@@ -403,6 +493,7 @@ const ChatManager = {
 
         this.debugHistory.push({
             timestamp: Date.now(),
+            images: imagesToSend, // 儲存所傳送的影像
             content: `[SYSTEM METRICS]
 Frustration Count: ${this.frustrationCount} ${this.frustrationCount >= 2 ? '(⚠️ 降級觸發)' : ''}
 Image Throttling: ${shouldSendImage ? '🔴 傳送截圖' : '🟢 節流 (無截圖)'}
@@ -421,7 +512,16 @@ ${finalUserText}${imagesToSend.length > 0 ? `\n\n[IMAGES SENT: ${imagesToSend.le
         this.renderDebugCard();
 
         try {
-            const rawResponse = await this.callGeminiAPI(systemPrompt, finalUserText, historyToSend, imagesToSend);
+            const apiResult = await this.callGeminiAPI(systemPrompt, finalUserText, historyToSend, imagesToSend);
+            const rawResponse = apiResult.text;
+
+            // 更新偵錯歷史中的 Token 與快取資訊，並重新渲染
+            const currentLog = this.debugHistory[this.debugHistory.length - 1];
+            if (currentLog) {
+                currentLog.usageMetadata = apiResult.usageMetadata;
+                currentLog.cacheStatus = apiResult.cacheStatus;
+                this.renderDebugCard();
+            }
             
             // Stage 3: 防禦性解析器升級為 Structured Outputs (JSON Schema)
             let mainText = "";
@@ -447,6 +547,14 @@ ${finalUserText}${imagesToSend.length > 0 ? `\n\n[IMAGES SENT: ${imagesToSend.le
 
         } catch (error) {
             console.error("[ChatManager] API Error:", error);
+            
+            // 更新偵錯歷史以顯示錯誤資訊
+            const currentLog = this.debugHistory[this.debugHistory.length - 1];
+            if (currentLog) {
+                currentLog.apiError = error.message || "無法連接 AI 伺服器";
+                this.renderDebugCard();
+            }
+
             this.addMessage('ai', "哎呀！我的大腦齒輪卡住了，請再試一次！✨", ["💬 重新傳送", "💬 回到機器人實驗"]);
         }
 
@@ -475,7 +583,11 @@ ${finalUserText}${imagesToSend.length > 0 ? `\n\n[IMAGES SENT: ${imagesToSend.le
 
         // 解析 Gemini 回傳格式 (對應 /api/chat.js 的回傳)
         if (data.candidates && data.candidates[0].content.parts[0].text) {
-            return data.candidates[0].content.parts[0].text;
+            return {
+                text: data.candidates[0].content.parts[0].text,
+                usageMetadata: data.usageMetadata || null,
+                cacheStatus: data._cacheStatus || null
+            };
         }
 
         throw new Error("Invalid API response format");

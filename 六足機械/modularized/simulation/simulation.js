@@ -1176,12 +1176,12 @@ export function getDiagnosticState() {
     const currentSpeed = (typeof displaySpeed !== 'undefined') ? parseFloat(displaySpeed.toFixed(1)) : 0;
     const isStable = (typeof isStableSupport !== 'undefined') ? isStableSupport : true;
 
-    // --- 1. Golden Rule Error ---
+    // --- 1. Golden Rule Error (Signed Deviation) ---
     const s_val = S / globalScale;
     const l_leg_val = L_leg / globalScale;
     const l_blue_val = L_blue / globalScale;
-    const goldenRuleError = Math.abs(l_blue_val - Math.sqrt(s_val * s_val + l_leg_val * l_leg_val)).toFixed(2);
-    const isGoldenRuleViolated = parseFloat(goldenRuleError) > 5.0;
+    const goldenRuleError = (l_blue_val - Math.sqrt(s_val * s_val + l_leg_val * l_leg_val)).toFixed(2);
+    const isGoldenRuleViolated = Math.abs(parseFloat(goldenRuleError)) > 5.0;
 
     // --- 2. COM Hop Diagnosis ---
     let expectedHop = 0;

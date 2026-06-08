@@ -14,6 +14,7 @@ const ChatManager = {
     lastSentParamsJson: null, // 紀錄上次發送給 AI 的參數狀態
     lastDiagnosisJson: null, // 紀錄上次的診斷狀態
     frustrationCount: 0, // 追蹤學生卡關程度
+    lastMetrics: null,    // 儲存前一次的物理指標
 
     init() {
         console.log("[ChatManager] Initializing...");
@@ -243,7 +244,7 @@ const ChatManager = {
         this.lastIsStable = analytics.symptom.isStable;
 
         // --- 核心機械構造規格手冊 (System Prompt - Static Prefix) ---
-        const systemPrompt = STATIC_COSTAR_PROMPT;
+        const systemPrompt = `${STATIC_COSTAR_PROMPT}\n\n${KINEMATICS_REFERENCE}`;
 
         // --- 當前背景數據 (Dynamic Context) ---
         let robotStateXml = "";
@@ -262,23 +263,56 @@ const ChatManager = {
         });
         const parameterDeltaStr = deltaStrs.join(", ");
 
+        // 計算物理指標變化量 (Delta)
+        let metricsDeltaStr = "無前次指標對照";
+        if (this.lastMetrics) {
+            const dSpeed = (analytics.symptom.speed - this.lastMetrics.speed).toFixed(1);
+            const dHop = (analytics.symptom.hopRange - this.lastMetrics.hopRange).toFixed(1);
+            metricsDeltaStr = `速度變化: ${dSpeed > 0 ? '+' : ''}${dSpeed} mm/s, 顛簸變化: ${dHop > 0 ? '+' : ''}${dHop} mm`;
+        }
+        this.lastMetrics = {
+            speed: analytics.symptom.speed,
+            hopRange: analytics.symptom.hopRange
+        };
+
+        // 參數極限值檢測與標記
+        const limits = {
+            legLength: { min: 10, max: 60 },
+            footLength: { min: 19, max: 100 },
+            blueLink: { min: 40, max: 100 },
+            bodyWidth: { min: 20, max: 80 },
+            crankRadius: { min: 6, max: 20 },
+            phaseDiff: { min: 0, max: 180 },
+            gearboxShift: { min: -10, max: 10 }
+        };
+        const getParamStr = (key, name) => {
+            const val = currentParams[key];
+            const lim = limits[key];
+            if (lim) {
+                if (val <= lim.min) return `${name}=${val} (已達最小值 ${lim.min})`;
+                if (val >= lim.max) return `${name}=${val} (已達最大值 ${lim.max})`;
+            }
+            return `${name}=${val}`;
+        };
+
         // 只有在參數變動、有結構衝突、或是歷史紀錄很短時，才發送完整物理數據
         if (currentParamsJson !== this.lastSentParamsJson || analytics.symptom.isClashing || this.history.length < 3) {
             robotStateXml = `
 <Robot_State>
   <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 實際速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm, 目前電量=${currentParams.batteryPct}%, 該電量預期速度=${expectedSpeed} mm/s</Analytics_Data>
-  <Parameter_Delta>當前滑桿偏離基準狀況：${parameterDeltaStr}</Parameter_Delta>
-  <Mechanical_Params>腳長=${currentParams.legLength}, 機器人高度=${currentParams.footLength}, 藍色直桿=${currentParams.blueLink}, 身體半寬=${currentParams.bodyWidth}, 曲柄孔位=${currentParams.crankRadius}, 相位差=${currentParams.phaseDiff}°, 齒輪箱位移=${currentParams.gearboxShift}</Mechanical_Params>
+  <Parameter_Delta>當前滑桿偏離基準狀況：${parameterDeltaStr} | 物理指標變化：${metricsDeltaStr}</Parameter_Delta>
+  <Mechanical_Params>${getParamStr('legLength', '腳長')}, ${getParamStr('footLength', '機器人高度')}, ${getParamStr('blueLink', '藍色直桿')}, ${getParamStr('bodyWidth', '身體半寬')}, ${getParamStr('crankRadius', '曲柄半徑 R')}, ${getParamStr('phaseDiff', '相位差')}°, ${getParamStr('gearboxShift', '齒輪箱位移')}</Mechanical_Params>
   <Performance_Baseline>馬達轉速=${currentParams.motorTargetSpeed} rad/s, 理論空載速度(Expected Normal Speed)=${currentParams.expectedNormalSpeed} mm/s</Performance_Baseline>
   <Posture_Criteria>判斷姿勢：請比較「實際速度」與「該電量預期速度」。若實際速度低於預期速度，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>${visualPrompt}
-</Robot_State>
-\n${KINEMATICS_REFERENCE}`;
+</Robot_State>`;
             this.lastSentParamsJson = currentParamsJson;
         } else {
-            robotStateXml = `<Robot_State>\n  <Info>機械參數與電量維持不變，持續觀察中</Info>${visualPrompt}\n</Robot_State>\n${KINEMATICS_REFERENCE}`;
+            robotStateXml = `<Robot_State>\n  <Info>機械參數與電量維持不變，持續觀察中</Info>${visualPrompt}\n</Robot_State>`;
         }
 
-        let tailInstruction = `\n<Tail_Instruction>\n系統強制提醒：請務必遵守 COSTAR 框架，並根據 Kinematics_Reference.md 的原則進行引導提問！主文限 50 字內，針對「單一」最致命問題給予適當的引導或回饋。回覆最後必須提供恰好 3 個「💬 建議回覆選項按鈕」。\n</Tail_Instruction>`;
+        let tailInstruction = `\n<Tail_Instruction>\n系統強制提醒：請務必遵守 COSTAR 框架，並根據 Kinematics_Reference.md 的原則進行引導提問！主文限 50 字內，針對「單一」最致命問題給予適當的引導或回饋。回覆最後必須提供恰好 3 個「💬 建議回覆選項按鈕」。`;
+        tailInstruction += `\n【重要】如果學生目前處於 Scenario A（卡關、表示不知道、不懂概念或詢問定義），請啟動「僅作解釋，不問問題」策略：主文僅使用 1 句生活譬喻來建構概念，嚴禁使用任何問句結尾，並直接提供建議選項。`;
+        tailInstruction += `\n</Tail_Instruction>`;
 
         // Stage 4: 自適應降級 (Adaptive Scaffolding)
         if (this.frustrationCount >= 2) {
@@ -304,7 +338,7 @@ Image Throttling: ${shouldSendImage ? '🔴 傳送截圖' : '🟢 節流 (無截
 Reason: ${throttlingReason}
 
 [STATIC PROMPT PREFIX (Cached)]
-<Role_And_Rules & Domain_Knowledge>
+<Role_And_Rules & Domain_Knowledge & Kinematics_Reference (Cached)>
 
 [HISTORY]
 ${historyText || '(無歷史紀錄)'}

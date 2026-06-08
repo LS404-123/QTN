@@ -62,11 +62,15 @@ const ChatManager = {
 
         const log = this.debugHistory[this.currentLogIndex];
         const timeStr = new Date(log.timestamp).toLocaleTimeString();
+        const escapedContent = log.content
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
 
         this.debugCardContainer.innerHTML = `
             <div class="debug-card">
                 <span class="debug-time">[${timeStr}] 📡 傳輸批次 #${this.currentLogIndex + 1}</span>
-                ${log.content}
+                ${escapedContent}
             </div>
         `;
 
@@ -82,9 +86,15 @@ const ChatManager = {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${role === 'ai' ? 'ai-msg' : 'user-msg'}`;
 
+        const escapedText = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br>');
+
         msgDiv.innerHTML = `
             <div class="msg-avatar">${role === 'ai' ? '🤖' : '👤'}</div>
-            <div class="msg-content">${text}</div>
+            <div class="msg-content">${escapedText}</div>
         `;
 
         // Stage 3: 動態按鈕渲染
@@ -371,8 +381,7 @@ ${finalUserText}${imagesToSend.length > 0 ? `\n\n[IMAGES SENT: ${imagesToSend.le
                 options.push('💬 回到機器人實驗');
             }
 
-            // 如果使用 HTML 顯示，需要處理換行
-            mainText = mainText.replace(/\n/g, '<br>');
+            // 將原始文字傳入，由 addMessage 處理 HTML 轉義與換行，避免對話歷史儲存 <br>
             this.addMessage('ai', mainText, options);
 
         } catch (error) {

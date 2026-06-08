@@ -57,20 +57,81 @@ const ChatManager = {
     /**
      * 渲染當前的偵錯卡片
      */
+    /**
+     * 格式化偵錯輸出的 Prompt 內容 (僅美化顯示，不改變原始發送字串)
+     */
+    formatDebugPrompt(content) {
+        // 1. 基本 HTML 轉義，防止被瀏覽器當作 HTML 解析
+        let escaped = content
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        // 2. 針對特定標籤做排版美化 (如 Analytics_Data, Parameter_Delta 等)
+        const tagsToTidy = [
+            'Analytics_Data', 
+            'Parameter_Delta', 
+            'Mechanical_Params', 
+            'Performance_Baseline'
+        ];
+
+        tagsToTidy.forEach(tag => {
+            const regex = new RegExp(`(&lt;${tag}&gt;)(.*?)(&lt;\\/${tag}&gt;)`, 'gs');
+            escaped = escaped.replace(regex, (match, openTag, body, closeTag) => {
+                let tidiedBody = body.trim();
+
+                if (tag === 'Parameter_Delta') {
+                    // 切割 "|" 與 逗號項目
+                    const sections = tidiedBody.split('|').map(section => {
+                        const cleanSec = section.trim();
+                        if (cleanSec.includes('當前滑桿偏離基準狀況：')) {
+                            const detail = cleanSec.replace('當前滑桿偏離基準狀況：', '').trim();
+                            const bulletList = detail.split(',').map(item => `    • ${item.trim()}`).join('\n');
+                            return `  當前滑桿偏離基準狀況：\n${bulletList}`;
+                        }
+                        if (cleanSec.includes('物理指標變化：')) {
+                            const detail = cleanSec.replace('物理指標變化：', '').trim();
+                            const bulletList = detail.split(',').map(item => `    • ${item.trim()}`).join('\n');
+                            return `  物理指標變化：\n${bulletList}`;
+                        }
+                        return `  ${cleanSec}`;
+                    });
+                    tidiedBody = '\n' + sections.join('\n') + '\n';
+                } else {
+                    // 對於其餘逗號分隔的標籤，轉成換行點列
+                    const listItems = tidiedBody.split(',').map(item => `  • ${item.trim()}`).join('\n');
+                    tidiedBody = '\n' + listItems + '\n';
+                }
+
+                return `${openTag}${tidiedBody}${closeTag}`;
+            });
+        });
+
+        // 3. XML 標籤語法高亮
+        escaped = escaped.replace(/(&lt;\/[a-zA-Z_]+&gt;)/g, '<span style="color: #38bdf8; font-weight: bold; opacity: 0.85;">$1</span>');
+        escaped = escaped.replace(/(&lt;[a-zA-Z_]+&gt;)/g, '<span style="color: #38bdf8; font-weight: bold;">$1</span>');
+        
+        // 4. 對特定的屬性鍵值進行簡單高亮
+        escaped = escaped.replace(/([^ \n\t&<>:=]+)([:=])(true|false|-?[0-9.]+(?:[^,\n\r&<>]*))/g, 
+            '<span style="color: #94a3b8;">$1</span>$2<span style="color: #fbbf24; font-weight: bold;">$3</span>');
+
+        return escaped;
+    },
+
+    /**
+     * 渲染當前的偵錯卡片
+     */
     renderDebugCard() {
         if (!this.debugCardContainer || this.currentLogIndex === -1) return;
 
         const log = this.debugHistory[this.currentLogIndex];
         const timeStr = new Date(log.timestamp).toLocaleTimeString();
-        const escapedContent = log.content
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+        const formattedContent = this.formatDebugPrompt(log.content);
 
         this.debugCardContainer.innerHTML = `
             <div class="debug-card">
                 <span class="debug-time">[${timeStr}] 📡 傳輸批次 #${this.currentLogIndex + 1}</span>
-                ${escapedContent}
+                ${formattedContent}
             </div>
         `;
 

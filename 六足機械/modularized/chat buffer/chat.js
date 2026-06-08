@@ -297,18 +297,11 @@ const ChatManager = {
 
         // 只有在參數變動、有結構衝突、或是歷史紀錄很短時，才發送完整物理數據
         if (currentParamsJson !== this.lastSentParamsJson || analytics.symptom.isClashing || this.history.length < 3) {
-            // 在前端預先計算黃金比例幾何誤差，避免 AI 產生計算幻覺
-            const S = currentParams.bodyWidth;
-            const L_leg = currentParams.legLength;
-            const L_blue = currentParams.blueLink;
-            const goldenRuleError = Math.abs(L_blue - Math.sqrt(S * S + L_leg * L_leg)).toFixed(2);
-
             robotStateXml = `
 <Robot_State>
   <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 實際速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm, 目前電量=${currentParams.batteryPct}%, 該電量預期速度=${expectedSpeed} mm/s</Analytics_Data>
   <Parameter_Delta>當前滑桿偏離基準狀況：${parameterDeltaStr} | 物理指標變化：${metricsDeltaStr}</Parameter_Delta>
-  <Golden_Rule_Error>${goldenRuleError}</Golden_Rule_Error>
-  <Mechanical_Params>${getParamStr('legLength', '腿長')}, ${getParamStr('footLength', '腳長/機器人高度')}, ${getParamStr('blueLink', '藍色直桿')}, ${getParamStr('bodyWidth', '身體半寬')}, ${getParamStr('crankRadius', '曲柄半徑')}, ${getParamStr('phaseDiff', '相位差')}°, ${getParamStr('gearboxShift', '齒輪箱位移')}</Mechanical_Params>
+  <Mechanical_Params>${getParamStr('legLength', '腳長')}, ${getParamStr('footLength', '機器人高度')}, ${getParamStr('blueLink', '藍色直桿')}, ${getParamStr('bodyWidth', '身體半寬')}, ${getParamStr('crankRadius', '曲柄半徑 R')}, ${getParamStr('phaseDiff', '相位差')}°, ${getParamStr('gearboxShift', '齒輪箱位移')}</Mechanical_Params>
   <Performance_Baseline>馬達轉速=${currentParams.motorTargetSpeed} rad/s, 理論空載速度(Expected Normal Speed)=${currentParams.expectedNormalSpeed} mm/s</Performance_Baseline>
   <Posture_Criteria>判斷姿勢：請比較「實際速度」與「該電量預期速度」。若實際速度低於預期速度，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>${visualPrompt}
 </Robot_State>`;

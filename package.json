@@ -25,5 +25,8 @@
   "homepage": "https://github.com/LS404-123/robot_simulation-#readme",
   "devDependencies": {
     "vite": "^8.0.7"
+  },
+  "dependencies": {
+    "three": "^0.184.0"
   }
 }

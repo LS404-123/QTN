@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-hant">
+<head>
+    <meta charset="UTF-8">
+    <title>曲柄 (Crank) SVG</title>
+    <style>
+        body {
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        svg {
+            background-color: white;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            height: 90vh; 
+            max-width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <!-- 
+        1 unit = 1 mm 
+        Padding: 5mm around the crank
+    -->
+    <svg viewBox="0 0 17.4 37.4" xmlns="http://www.w3.org/2000/svg">
+        <!-- 
+            Blueprint Dimensions:
+            Width: 7.40 mm (Radius 3.70 mm)
+            Top Hole (Hexagon): Flat-to-flat 3.00 mm
+            Circle Holes: Diameter 3.00 mm
+            Hole Spacing: 6.50 mm, 4.50 mm, 4.50 mm, 4.50 mm
+            Total Length: 27.40 mm
+        -->
+        
+        <!-- 外輪廓 (Outer Contour) -->
+        <path d="
+            M 5, 8.7
+            A 3.7,3.7 0 0, 1 12.4, 8.7
+            L 12.4, 28.7
+            A 3.7,3.7 0 0, 1 5, 28.7
+            Z" 
+            fill="none" 
+            stroke="#ff9800" 
+            stroke-width="0.2" 
+            stroke-linejoin="round" />
+            
+        <!-- 頂部六角孔 (Top Hexagon Hole) -->
+        <!-- 注意：Path 採用逆時針順序，以支援可能的非零環繞填色規則 -->
+        <path d="
+            M 8.7, 6.968
+            L 7.2, 7.834
+            L 7.2, 9.566
+            L 8.7, 10.432
+            L 10.2, 9.566
+            L 10.2, 7.834
+            Z" 
+            fill="none" 
+            stroke="#ff9800" 
+            stroke-width="0.2" 
+            stroke-linejoin="round" />
+
+        <!-- 圓形掛孔 (Mounting Holes) -->
+        <circle cx="8.7" cy="15.2" r="1.5" fill="none" stroke="#ff9800" stroke-width="0.2" />
+        <circle cx="8.7" cy="19.7" r="1.5" fill="none" stroke="#ff9800" stroke-width="0.2" />
+        <circle cx="8.7" cy="24.2" r="1.5" fill="none" stroke="#ff9800" stroke-width="0.2" />
+        <circle cx="8.7" cy="28.7" r="1.5" fill="none" stroke="#ff9800" stroke-width="0.2" />
+    </svg>
+</body>
+</html>

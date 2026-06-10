@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>組裝：齒輪箱與馬達</title>
+    <style>
+        body {
+            background: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <svg viewBox="-5 -5 85 35" width="800" height="400" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#e5e5e5" />
+                <stop offset="25%" stop-color="#e5e5e5" />
+                <stop offset="25%" stop-color="#bbbbbb" />
+                <stop offset="75%" stop-color="#bbbbbb" />
+                <stop offset="75%" stop-color="#e5e5e5" />
+                <stop offset="100%" stop-color="#e5e5e5" />
+            </linearGradient>
+            
+            <clipPath id="motorClip">
+                <path d="M 0,0 L 14.50,0 A 1,1 0 0,1 15.50,1.00 L 15.50,19.00 A 1,1 0 0,1 14.50,20.00 L 0,20.00 Z" />
+            </clipPath>
+        </defs>
+
+        <!-- ── 馬達 (Motor) ───────────────────────────────────── -->
+        <!-- 置於齒輪箱右側 (x=52)，垂直居中對齊 (dy = 12.5 - 10 = 2.5) -->
+        <g id="motor-assembly" transform="translate(52, 2.5)">
+            <g id="motor-main" clip-path="url(#motorClip)" stroke="#333333" stroke-width="0.1" stroke-linejoin="round">
+                <rect x="10.50" y="0" width="10" height="20" fill="#ffffff" />
+                <rect x="0" y="0" width="10.50" height="4.00" fill="#e5e5e5" />
+                <rect x="0" y="4.00" width="10.50" height="12.00" fill="#bbbbbb" />
+                <rect x="0" y="16.00" width="10.50" height="4.00" fill="#e5e5e5" />
+                
+                <!-- 輪廓 -->
+                <path d="M 0,0 L 14.50,0 A 1,1 0 0,1 15.50,1.00 L 15.50,19.00 A 1,1 0 0,1 14.50,20.00 L 0,20.00 Z" fill="none" />
+            </g>
+
+            <!-- 右側凸出部 -->
+            <path d="M 15.50, 5.00 L 17.50, 5.00 A 0.5,0.5 0 0,1 18.00, 5.50 L 18.00, 14.50 A 0.5,0.5 0 0,1 17.50, 15.00 L 15.50, 15.00 Z" fill="#f0f0f0" stroke="#333333" stroke-width="0.1" />
+            <path d="M 18.00, 9.00 L 18.50, 9.00 A 0.5,0.5 0 0,1 19.00, 9.50 L 19.00, 10.50 A 0.5,0.5 0 0,1 18.50, 11.00 L 18.00, 11.00 Z" fill="#DCDCDC" stroke="#333333" stroke-width="0.1" />
+
+            <!-- 切割孔 -->
+            <path d="M 10.50, 6.25 L 10.50, 13.75 L 13.50, 13.75 L 13.50, 6.25 Z" fill="#7a7a7a" stroke="#333333" stroke-width="0.1" />
+
+            <!-- 銅接點 -->
+            <g id="bronze-parts" fill="#cd7f32" stroke="#8b4513" stroke-width="0.1">
+                <path d="M 11.50, 6.25 L 11.50, 3.25 A 1.00,1.00 0 0,1 13.50, 3.25 L 13.50, 6.25 Z" />
+                <path d="M 12.00, 5.25 L 12.00, 3.75 A 0.50,0.50 0 0,1 13.00, 3.75 L 13.00, 5.25 Z" fill="#ffffff" />
+                <path d="M 11.50, 13.75 L 11.50, 16.75 A 1.00,1.00 0 0,0 13.50, 16.75 L 13.50, 13.75 Z" />
+                <path d="M 12.00, 14.75 L 12.00, 16.25 A 0.50,0.50 0 0,0 13.00, 16.25 L 13.00, 14.75 Z" fill="#ffffff" />
+            </g>
+        </g>
+
+        <!-- ── 齒輪箱 (Gearbox) ────────────────────────────────── -->
+        <!-- x: 0 ~ 52, y: 0 ~ 25 -->
+        <g id="gearbox-main" fill="#8a8d91" stroke="#333333" stroke-width="0.3" stroke-linejoin="round">
+            <path d="M 2,0 L 33.5, 1.32 L 52, 1.32 L 52, 25 L 1, 25 A 1,1 0 0,1 0,24 L 0, 2 A 2,2 0 0,1 2,0 Z" />
+            <rect x="43.75" y="1.32" width="8.25" height="4.34" />
+            <rect x="43.75" y="20.66" width="8.25" height="4.34" />
+            <line x1="31.50" y1="1.24" x2="31.50" y2="25" />
+            <line x1="33.50" y1="1.32" x2="33.50" y2="25" />
+            
+            <!-- 軸孔 -->
+            <g id="holes" stroke="#333333" stroke-width="0.3">
+                <circle cx="11.5" cy="12.5" r="3.5" fill="#808082" />
+                <circle cx="11.5" cy="12.5" r="1.5" fill="#000000" />
+                <circle cx="25.0" cy="12.5" r="3.5" fill="#808082" />
+                <circle cx="25.0" cy="12.5" r="1.5" fill="#000000" />
+            </g>
+            
+            <!-- 底部小鍵 -->
+            <rect x="16" y="24" width="5" height="1" fill="#8a8d91" />
+        </g>
+    </svg>
+</body>
+
+</html>

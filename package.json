@@ -2,6 +2,9 @@
   "name": "qtn",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": "^24.0.0"
+  },
   "description": "QTland - 機器人模擬中心",
   "main": "index.html",
   "scripts": {
@@ -16,12 +19,14 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/LS404-123/robot_simulation-/issues"
   },
   "homepage": "https://github.com/LS404-123/robot_simulation-#readme",
   "devDependencies": {
     "vite": "^8.0.7"
+  },
+  "dependencies": {
+    "three": "^0.184.0"
   }
 }

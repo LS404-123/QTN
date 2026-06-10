@@ -7,9 +7,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const AppConfig = {
-    defaultModelUrl: isLocal ? '/new_robot_compressed.glb' : 'https://media.githubusercontent.com/media/LS404-123/robot_simulation-/plan-a-pivot-fix/public/new_robot_compressed.glb',
+    defaultModelUrl: '/new_robot_compressed.glb',
     cameraDistanceMultiplier: 1.5,
     forcePlasticMaterial: true,
     defaultRoughness: 0.6,

@@ -11,7 +11,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // 3D 檢視器狀態與設定
 // ==========================================
 const AppConfig = {
-    defaultModelUrl: '../new robot.glb',
+    defaultModelUrl: '/new robot.glb',
     cameraDistanceMultiplier: 1.5,
     forcePlasticMaterial: true,
     defaultRoughness: 0.6,

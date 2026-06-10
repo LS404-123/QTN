@@ -123,109 +123,130 @@ function loadRobotModel(url) {
     dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
     loader.setDRACOLoader(dracoLoader);
     loader.load(url, function (gltf) {
-        loadedModel = gltf.scene;
-        const clonedMaterials = {};
+        console.log('gltf loaded:', gltf);
+        
+        const processLoadedModel = (model) => {
+            loadedModel = model;
+            const clonedMaterials = {};
 
-        const json = gltf.parser.json;
-        const matMap = {};
-        if (json.materials) {
-            json.materials.forEach(m => {
-                if (m.name && m.extensions && m.extensions.KHR_materials_pbrSpecularGlossiness) {
-                    matMap[m.name] = m.extensions.KHR_materials_pbrSpecularGlossiness;
-                }
-            });
-        }
-
-        loadedModel.traverse((child) => {
-            if (child.isMesh && child.material) {
-                child.frustumCulled = false;
-                if (child.material.name && matMap[child.material.name]) {
-                    const sg = matMap[child.material.name];
-                    if (sg.diffuseFactor) {
-                        child.material.color.fromArray(sg.diffuseFactor);
-                        if (sg.diffuseFactor[0] === 0 && sg.diffuseFactor[1] === 0 && sg.diffuseFactor[2] === 0) {
-                            if (sg.specularFactor) child.material.color.fromArray(sg.specularFactor);
-                        }
+            const json = gltf.parser.json;
+            const matMap = {};
+            if (json.materials) {
+                json.materials.forEach(m => {
+                    if (m.name && m.extensions && m.extensions.KHR_materials_pbrSpecularGlossiness) {
+                        matMap[m.name] = m.extensions.KHR_materials_pbrSpecularGlossiness;
                     }
-                }
+                });
+            }
 
-                if (AppConfig.forcePlasticMaterial) {
-                    child.material.metalness = AppConfig.defaultMetalness;
-                    child.material.roughness = AppConfig.defaultRoughness;
-                }
-
-                const partNameToCheck = (child.name + (child.parent ? child.parent.name : "")).toLowerCase();
-                const matName = (child.material.name || "").toLowerCase();
-
-                for (const rule of PartColorOverrides) {
-                    if (partNameToCheck.includes(rule.part.toLowerCase())) {
-                        if (rule.material && !matName.includes(rule.material.toLowerCase())) continue;
-                        if (!rule.material) {
-                            let isExcluded = false;
-                            for (const keyword of AppConfig.excludeColorKeywords) {
-                                if (matName.includes(keyword.toLowerCase())) {
-                                    isExcluded = true;
-                                    break;
-                                }
+            loadedModel.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    child.frustumCulled = false;
+                    if (child.material.name && matMap[child.material.name]) {
+                        const sg = matMap[child.material.name];
+                        if (sg.diffuseFactor) {
+                            child.material.color.fromArray(sg.diffuseFactor);
+                            if (sg.diffuseFactor[0] === 0 && sg.diffuseFactor[1] === 0 && sg.diffuseFactor[2] === 0) {
+                                if (sg.specularFactor) child.material.color.fromArray(sg.specularFactor);
                             }
-                            if (isExcluded) continue;
                         }
-
-                        const cacheKey = child.material.uuid + '_' + rule.color;
-                        if (!clonedMaterials[cacheKey]) {
-                            const newMat = child.material.clone();
-                            newMat.color.setHex(rule.color);
-                            clonedMaterials[cacheKey] = newMat;
-                        }
-                        child.material = clonedMaterials[cacheKey];
-                        break; 
                     }
+
+                    if (AppConfig.forcePlasticMaterial) {
+                        child.material.metalness = AppConfig.defaultMetalness;
+                        child.material.roughness = AppConfig.defaultRoughness;
+                    }
+
+                    const partNameToCheck = (child.name + (child.parent ? child.parent.name : "")).toLowerCase();
+                    const matName = (child.material.name || "").toLowerCase();
+
+                    for (const rule of PartColorOverrides) {
+                        if (partNameToCheck.includes(rule.part.toLowerCase())) {
+                            if (rule.material && !matName.includes(rule.material.toLowerCase())) continue;
+                            if (!rule.material) {
+                                let isExcluded = false;
+                                for (const keyword of AppConfig.excludeColorKeywords) {
+                                    if (matName.includes(keyword.toLowerCase())) {
+                                        isExcluded = true;
+                                        break;
+                                    }
+                                }
+                                if (isExcluded) continue;
+                            }
+
+                            const cacheKey = child.material.uuid + '_' + rule.color;
+                            if (!clonedMaterials[cacheKey]) {
+                                const newMat = child.material.clone();
+                                newMat.color.setHex(rule.color);
+                                clonedMaterials[cacheKey] = newMat;
+                            }
+                            child.material = clonedMaterials[cacheKey];
+                            break; 
+                        }
+                    }
+                    child.material.needsUpdate = true;
                 }
-                child.material.needsUpdate = true;
-            }
-        });
-
-        scene.add(loadedModel);
-
-        // 為每個子零件加上獨立的極細黑色描邊 (BackSide 擴展描邊)
-        const meshesToOutline = [];
-        loadedModel.traverse((child) => {
-            if (child.isMesh && child.material) {
-                meshesToOutline.push(child);
-            }
-        });
-
-        meshesToOutline.forEach((child) => {
-            const outlineMat = new THREE.MeshBasicMaterial({
-                color: 0x000000,
-                side: THREE.BackSide
             });
-            const outlineMesh = new THREE.Mesh(child.geometry, outlineMat);
-            // 縮放設定為 1.002 使得描邊極細
-            outlineMesh.scale.set(1.002, 1.002, 1.002);
-            outlineMesh.userData.isOutline = true;
-            outlineMesh.raycast = () => {}; // 停用射線偵測避免影響選取
-            child.add(outlineMesh);
-        });
 
-        const box = new THREE.Box3().setFromObject(loadedModel);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
+            scene.add(loadedModel);
 
-        window.robotCenter = center.clone();
-        window.robotDist = maxDim * AppConfig.cameraDistanceMultiplier;
+            // 為每個子零件加上獨立的極細黑色描邊 (BackSide 擴展描邊)
+            const meshesToOutline = [];
+            loadedModel.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    meshesToOutline.push(child);
+                }
+            });
 
-        camera.position.set(-0.39, 0.28, 0.26);
-        orbit.target.set(-0.03, 0.05, -0.02);
-        orbit.update();
+            meshesToOutline.forEach((child) => {
+                const outlineMat = new THREE.MeshBasicMaterial({
+                    color: 0x000000,
+                    side: THREE.BackSide
+                });
+                const outlineMesh = new THREE.Mesh(child.geometry, outlineMat);
+                // 縮放設定為 1.002 使得描邊極細
+                outlineMesh.scale.set(1.002, 1.002, 1.002);
+                outlineMesh.userData.isOutline = true;
+                outlineMesh.raycast = () => {}; // 停用射線偵測避免影響選取
+                child.add(outlineMesh);
+            });
 
-        let effectiveRoot = loadedModel;
-        while (effectiveRoot.children.length === 1 && !effectiveRoot.children[0].isMesh) {
-            effectiveRoot = effectiveRoot.children[0];
+            const box = new THREE.Box3().setFromObject(loadedModel);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+
+            window.robotCenter = center.clone();
+            window.robotDist = maxDim * AppConfig.cameraDistanceMultiplier;
+
+            camera.position.set(-0.39, 0.28, 0.26);
+            orbit.target.set(-0.03, 0.05, -0.02);
+            orbit.update();
+
+            let effectiveRoot = loadedModel;
+            while (effectiveRoot.children.length === 1 && !effectiveRoot.children[0].isMesh) {
+                effectiveRoot = effectiveRoot.children[0];
+            }
+            loadedModel.userData.effectiveRoot = effectiveRoot;
+            forceRender = true;
+        };
+
+        if (gltf.scene) {
+            processLoadedModel(gltf.scene);
+        } else {
+            gltf.parser.getDependencies('node').then((nodes) => {
+                const group = new THREE.Group();
+                group.name = 'robot_root';
+                nodes.forEach((node) => {
+                    if (node.parent === null) {
+                        group.add(node);
+                    }
+                });
+                processLoadedModel(group);
+            }).catch((err) => {
+                console.error('自建場景時解析節點失敗:', err);
+            });
         }
-        loadedModel.userData.effectiveRoot = effectiveRoot;
-        forceRender = true;
     }, undefined, function (error) {
         console.error('載入模型時發生錯誤:', error);
     });

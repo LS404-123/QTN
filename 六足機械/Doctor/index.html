@@ -247,104 +247,123 @@
             const dracoLoader = new DRACOLoader();
             dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
             loader.setDRACOLoader(dracoLoader);
-            loader.load(url, function (gltf) {
-                loadedModel = gltf.scene;
-                const clonedMaterials = {};
+             loader.load(url, function (gltf) {
+                 const processLoadedModel = (model) => {
+                     loadedModel = model;
+                     const clonedMaterials = {};
 
-                // 讀取舊材質並修復 KHR_materials_pbrSpecularGlossiness 顏色
-                const json = gltf.parser.json;
-                const matMap = {};
-                if (json.materials) {
-                    json.materials.forEach(m => {
-                        if (m.name && m.extensions && m.extensions.KHR_materials_pbrSpecularGlossiness) {
-                            matMap[m.name] = m.extensions.KHR_materials_pbrSpecularGlossiness;
-                        }
-                    });
-                }
+                     // 讀取舊材質並修復 KHR_materials_pbrSpecularGlossiness 顏色
+                     const json = gltf.parser.json;
+                     const matMap = {};
+                     if (json.materials) {
+                         json.materials.forEach(m => {
+                             if (m.name && m.extensions && m.extensions.KHR_materials_pbrSpecularGlossiness) {
+                                 matMap[m.name] = m.extensions.KHR_materials_pbrSpecularGlossiness;
+                             }
+                         });
+                     }
 
-                loadedModel.traverse((child) => {
-                    if (child.isMesh && child.material) {
-                        child.frustumCulled = false;
-                        if (child.material.name && matMap[child.material.name]) {
-                            const sg = matMap[child.material.name];
-                            if (sg.diffuseFactor) {
-                                child.material.color.fromArray(sg.diffuseFactor);
-                                if (sg.diffuseFactor[0] === 0 && sg.diffuseFactor[1] === 0 && sg.diffuseFactor[2] === 0) {
-                                    if (sg.specularFactor) child.material.color.fromArray(sg.specularFactor);
-                                }
-                            }
-                        }
+                     loadedModel.traverse((child) => {
+                         if (child.isMesh && child.material) {
+                             child.frustumCulled = false;
+                             if (child.material.name && matMap[child.material.name]) {
+                                 const sg = matMap[child.material.name];
+                                 if (sg.diffuseFactor) {
+                                     child.material.color.fromArray(sg.diffuseFactor);
+                                     if (sg.diffuseFactor[0] === 0 && sg.diffuseFactor[1] === 0 && sg.diffuseFactor[2] === 0) {
+                                         if (sg.specularFactor) child.material.color.fromArray(sg.specularFactor);
+                                     }
+                                 }
+                             }
 
-                        // 統一 PBR 質感覆寫
-                        if (AppConfig.forcePlasticMaterial) {
-                            child.material.metalness = AppConfig.defaultMetalness;
-                            child.material.roughness = AppConfig.defaultRoughness;
-                        }
+                             // 統一 PBR 質感覆寫
+                             if (AppConfig.forcePlasticMaterial) {
+                                 child.material.metalness = AppConfig.defaultMetalness;
+                                 child.material.roughness = AppConfig.defaultRoughness;
+                             }
 
-                        // 根據上方的 PartColorOverrides 設定，動態套用客製化顏色
-                        const partNameToCheck = (child.name + (child.parent ? child.parent.name : "")).toLowerCase();
-                        const matName = (child.material.name || "").toLowerCase();
+                             // 根據上方的 PartColorOverrides 設定，動態套用客製化顏色
+                             const partNameToCheck = (child.name + (child.parent ? child.parent.name : "")).toLowerCase();
+                             const matName = (child.material.name || "").toLowerCase();
 
-                        for (const rule of PartColorOverrides) {
-                            if (partNameToCheck.includes(rule.part.toLowerCase())) {
-                                // 1. 若設定檔有明確指定要針對哪一種材質，就必須符合該材質名稱
-                                if (rule.material && !matName.includes(rule.material.toLowerCase())) {
-                                    continue;
-                                }
+                             for (const rule of PartColorOverrides) {
+                                 if (partNameToCheck.includes(rule.part.toLowerCase())) {
+                                     // 1. 若設定檔有明確指定要針對哪一種材質，就必須符合該材質名稱
+                                     if (rule.material && !matName.includes(rule.material.toLowerCase())) {
+                                         continue;
+                                     }
 
-                                // 2. 若沒有特別指定材質，則預設排除 AppConfig.excludeColorKeywords 裡定義的金屬螺絲等不需染色的部位
-                                if (!rule.material) {
-                                    let isExcluded = false;
-                                    for (const keyword of AppConfig.excludeColorKeywords) {
-                                        if (matName.includes(keyword.toLowerCase())) {
-                                            isExcluded = true;
-                                            break;
-                                        }
-                                    }
-                                    if (isExcluded) continue;
-                                }
+                                     // 2. 若沒有特別指定材質，則預設排除 AppConfig.excludeColorKeywords 裡定義的金屬螺絲等不需染色的部位
+                                     if (!rule.material) {
+                                         let isExcluded = false;
+                                         for (const keyword of AppConfig.excludeColorKeywords) {
+                                             if (matName.includes(keyword.toLowerCase())) {
+                                                 isExcluded = true;
+                                                 break;
+                                             }
+                                         }
+                                         if (isExcluded) continue;
+                                     }
 
-                                const cacheKey = child.material.uuid + '_' + rule.color;
-                                if (!clonedMaterials[cacheKey]) {
-                                    const newMat = child.material.clone();
-                                    newMat.color.setHex(rule.color);
-                                    clonedMaterials[cacheKey] = newMat;
-                                }
-                                child.material = clonedMaterials[cacheKey];
-                                break; // 找到符合的第一條規則並套用後就跳出
-                            }
-                        }
+                                     const cacheKey = child.material.uuid + '_' + rule.color;
+                                     if (!clonedMaterials[cacheKey]) {
+                                         const newMat = child.material.clone();
+                                         newMat.color.setHex(rule.color);
+                                         clonedMaterials[cacheKey] = newMat;
+                                     }
+                                     child.material = clonedMaterials[cacheKey];
+                                     break; // 找到符合的第一條規則並套用後就跳出
+                                 }
+                             }
 
-                        child.material.needsUpdate = true;
-                    }
-                });
+                             child.material.needsUpdate = true;
+                         }
+                     });
 
-                scene.add(loadedModel);
+                     scene.add(loadedModel);
 
-                // 自動計算相機自適應對齊
-                const box = new THREE.Box3().setFromObject(loadedModel);
-                const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
+                     // 自動計算相機自適應對齊
+                     const box = new THREE.Box3().setFromObject(loadedModel);
+                     const center = box.getCenter(new THREE.Vector3());
+                     const size = box.getSize(new THREE.Vector3());
+                     const maxDim = Math.max(size.x, size.y, size.z);
 
-                window.robotCenter = center.clone();
-                window.robotDist = maxDim * AppConfig.cameraDistanceMultiplier;
+                     window.robotCenter = center.clone();
+                     window.robotDist = maxDim * AppConfig.cameraDistanceMultiplier;
 
-                // 設定為使用者指定的初始視角 (從 Admin Mode 取得)
-                camera.position.set(-0.39, 0.28, 0.26);
-                orbit.target.set(-0.03, 0.05, -0.02);
-                orbit.update();
+                     // 設定為使用者指定的初始視角 (從 Admin Mode 取得)
+                     camera.position.set(-0.39, 0.28, 0.26);
+                     orbit.target.set(-0.03, 0.05, -0.02);
+                     orbit.update();
 
-                // 計算有效根節點 (跳過單一包裝節點如 Scene / root，達到通用適應性)
-                let effectiveRoot = loadedModel;
-                while (effectiveRoot.children.length === 1 && !effectiveRoot.children[0].isMesh) {
-                    effectiveRoot = effectiveRoot.children[0];
-                }
-                loadedModel.userData.effectiveRoot = effectiveRoot;
-                forceRender = true;
-            }, undefined, function (error) {
-                console.error('載入模型時發生錯誤:', error);
-            });
+                     // 計算有效根節點 (跳過單一包裝節點如 Scene / root，達到通用適應性)
+                     let effectiveRoot = loadedModel;
+                     while (effectiveRoot.children.length === 1 && !effectiveRoot.children[0].isMesh) {
+                         effectiveRoot = effectiveRoot.children[0];
+                     }
+                     loadedModel.userData.effectiveRoot = effectiveRoot;
+                     forceRender = true;
+                 };
+
+                 if (gltf.scene) {
+                     processLoadedModel(gltf.scene);
+                 } else {
+                     gltf.parser.getDependencies('node').then((nodes) => {
+                         const group = new THREE.Group();
+                         group.name = 'robot_root';
+                         nodes.forEach((node) => {
+                             if (node.parent === null) {
+                                 group.add(node);
+                             }
+                         });
+                         processLoadedModel(group);
+                     }).catch((err) => {
+                         console.error('自建場景時解析節點失敗:', err);
+                     });
+                 }
+             }, undefined, function (error) {
+                 console.error('載入模型時發生錯誤:', error);
+             });
         }
 
         // 6. 處理選取零件邏輯與高亮

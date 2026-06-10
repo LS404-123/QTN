@@ -9,7 +9,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const AppConfig = {
-    defaultModelUrl: isLocal ? '/new_robot.glb' : 'https://github.com/LS404-123/robot_simulation-/releases/download/v1.0.0/new_robot.glb',
+    defaultModelUrl: isLocal ? '/new_robot.glb' : 'https://media.githubusercontent.com/media/LS404-123/robot_simulation-/plan-a-pivot-fix/public/new_robot.glb',
     cameraDistanceMultiplier: 1.5,
     forcePlasticMaterial: true,
     defaultRoughness: 0.6,

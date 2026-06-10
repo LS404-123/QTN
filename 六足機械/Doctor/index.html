@@ -234,7 +234,7 @@
             orbit.enabled = !event.value;
         });
         transformControl.addEventListener('change', () => forceRender = true);
-        scene.add(transformControl);
+        scene.add(transformControl.getHelper());
 
         // 5. 模型加載器與相機自適應對齊
         const raycaster = new THREE.Raycaster();

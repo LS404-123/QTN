@@ -74,7 +74,7 @@ function init3D() {
         orbit.enabled = !event.value;
     });
     transformControl.addEventListener('change', () => forceRender = true);
-    scene.add(transformControl);
+    scene.add(transformControl.getHelper());
 
     // ==========================================
     // 後處理效果 (Post-processing) 設定

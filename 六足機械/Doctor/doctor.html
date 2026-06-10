@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doctor Simulator - Hexapod Troubleshooting</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="doctor.css">
+    
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <!-- Area 1: 3D Viewer -->
+            <main class="viewer-area" id="viewer-container">
+                <!-- Overlays for 3D Viewer -->
+                <div id="info-overlay">
+                    <b>操作說明：</b><br>
+                    1. <b>點擊</b> 模型選取個別零件。<br>
+                    2. 拖曳出現的控制軸來<b>移動</b>零件。<br>
+                    3. 按下 <kbd>ESC</kbd> 或是點擊空白處來<b>取消選取</b>。
+                </div>
+
+                <div id="part-info-overlay">
+                    <div class="label">群組：<span id="group-name">未選取</span></div>
+                    <div class="value">零件：<span id="part-name">未選取</span></div>
+                    <button id="btn-mark-inspected" style="display:none; margin-top: 10px;" class="action-btn">標記為已排查</button>
+                </div>
+
+                <div id="mode-panel">
+                    <a href="../modularized/index.html" class="icon-btn" style="text-decoration: none; display: inline-flex; align-items: center;" title="返回模擬器">🏠 返回模擬器</a>
+                    <button class="icon-btn" id="btn-wireframe" title="線框模式">線框模式</button>
+                    <button class="icon-btn" id="btn-transparent" title="透視模式">透視模式</button>
+                    <button class="icon-btn theme-toggle-btn" id="btn-theme" title="切換淺色模式">☀️</button>
+                </div>
+
+                <div id="pov-panel">
+                    <button class="pov-btn" id="btn-top">俯視</button>
+                    <button class="pov-btn" id="btn-front">正面</button>
+                    <button class="pov-btn" id="btn-side">側面</button>
+                </div>
+                
+                <div id="loading-overlay" style="display: none;">
+                    <div class="spinner"></div>
+                    <div class="loading-text">載入線框模型中...</div>
+                </div>
+                
+                <div id="admin-panel" style="display: none;">
+                    <div class="admin-header">🛠 Admin Tools</div>
+                    <div class="admin-section">
+                        <div class="admin-title">Camera Info</div>
+                        <div>Pos : <span id="admin-pos"></span></div>
+                        <div>Rot : <span id="admin-rot"></span></div>
+                        <div>Target: <span id="admin-target"></span></div>
+                    </div>
+                    <div class="admin-section">
+                        <div class="admin-title">Quick Actions</div>
+                        <button class="action-btn" onclick="location.reload()">Reload Simulator</button>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Area 2 & 3: Sidebar -->
+            <aside class="sidebar">
+                
+                <!-- Area 2: AI Diagnostic Chat -->
+                <section class="chat-area">
+                    <div class="section-header">
+                        <h2>AI 診斷助手</h2>
+                    </div>
+                    <div class="chat-history" id="chat-history">
+                        <div class="message ai">
+                            <div class="msg-content">你好！我是你的六足機器人診斷助手。請觀察機器人的狀況，你看到了什麼異常？</div>
+                        </div>
+                    </div>
+                    <div class="chat-input-area">
+                        <div class="quick-replies" id="quick-replies">
+                            <button class="reply-btn">機器人完全不動</button>
+                            <button class="reply-btn">聽到齒輪異音</button>
+                            <button class="reply-btn">走路姿勢跛腳</button>
+                            <button class="reply-btn">馬達空轉</button>
+                        </div>
+                    </div>
+                </section>
+
+            </aside>
+        </div>
+
+        <!-- Area 3: Inspected Parts Status -->
+        <section class="status-area bottom-panel">
+            <div class="section-header">
+                <h2>已排查清單</h2>
+                <span class="progress-text" id="progress-text">已排除 0%</span>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar" style="width: 0%;"></div>
+            </div>
+            <div class="inspected-parts" id="inspected-list">
+                <!-- Inspected items will be injected here -->
+                <div class="empty-state">尚未排查任何零件</div>
+            </div>
+        </section>
+    </div>
+
+    <script type="module" src="doctor.js"></script>
+</body>
+
+</html>

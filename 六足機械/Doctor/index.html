@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot 3D Editor</title>
+    <!-- 引入 Modern 字體 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            background: radial-gradient(circle at 50% 50%, #2a2d3e 0%, #090a0f 100%);
+            overflow: hidden;
+            color: #eee;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 12px;
+            pointer-events: auto;
+            /* 允許點擊以開啟 Admin Mode */
+            line-height: 1.7;
+            user-select: none;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        kbd {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #00e5ff;
+        }
+
+        #pov-panel {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px 20px;
+            border-radius: 30px;
+            display: flex;
+            gap: 15px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .pov-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #eee;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .pov-btn:hover {
+            background: rgba(0, 229, 255, 0.15);
+            border-color: rgba(0, 229, 255, 0.4);
+            color: #00e5ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 229, 255, 0.2);
+        }
+
+        .pov-btn.active {
+            background: rgba(0, 229, 255, 0.25);
+            border-color: rgba(0, 229, 255, 0.8);
+            color: #fff;
+            box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+        }
+
+        #part-info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            padding: 15px 25px;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 500;
+            color: #00e5ff;
+            box-shadow: 0 4px 16px rgba(0, 229, 255, 0.15);
+            pointer-events: none;
+            display: none;
+        }
+
+        #mode-panel {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+    </style>
+    <!-- 使用 Import Map 載入 Three.js 與其附加元件 -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <div id="info">
+        <b>操作說明：</b><br>
+        1. <b>點擊</b> 模型選取個別零件。<br>
+        2. 拖曳出現的控制軸來<b>移動</b>零件。<br>
+        3. 按下 <kbd>ESC</kbd> 或是點擊空白處來<b>取消選取</b>。
+    </div>
+
+    <div id="pov-panel">
+        <button class="pov-btn" id="btn-top">俯視 (Top)</button>
+        <button class="pov-btn" id="btn-front">正面 (Front)</button>
+        <button class="pov-btn" id="btn-side">側面 (Side)</button>
+    </div>
+
+    <div id="part-info">
+        <div style="font-size: 14px; color: #888; margin-bottom: 5px;">群組：<span id="group-name">未選取</span></div>
+        <div>零件：<span id="part-name">未選取</span></div>
+    </div>
+
+    <div id="mode-panel">
+        <button class="pov-btn" id="btn-wireframe">線框模式</button>
+        <button class="pov-btn" id="btn-transparent">透明模式</button>
+    </div>
+
+    <!-- Admin Mode POV Display -->
+    <div id="admin-panel"
+        style="display: none; position: absolute; bottom: 20px; left: 20px; background: rgba(0, 0, 0, 0.8); color: #0f0; padding: 10px 15px; font-family: monospace; font-size: 13px; border-radius: 8px; border: 1px solid #0f0; z-index: 1000; pointer-events: none; backdrop-filter: blur(4px);">
+        <b>[ ADMIN MODE ]</b><br>
+        Pos : <span id="admin-pos"></span><br>
+        Rot : <span id="admin-rot"></span><br>
+        Target: <span id="admin-target"></span>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // 效能優化：追蹤渲染狀態
+        let forceRender = true;
+        const lastCameraPos = new THREE.Vector3();
+        const lastCameraRot = new THREE.Quaternion();
+
+        // ==========================================
+        // 全域應用程式設定 (AppConfig)
+        // ==========================================
+        // 這些參數決定了 3D 檢視器的通用行為，替換此處數值即可輕鬆套用至不同專案或模型
+        const AppConfig = {
+            // 預設載入的模型路徑
+            defaultModelUrl: '../new robot.glb',
+
+            // 相機距離倍率：控制「俯視/正面/側面」運鏡時，相機拉遠的距離 (根據模型大小自動計算的乘數)
+            cameraDistanceMultiplier: 1.5,
+
+            // 預設 PBR 材質覆寫：若為 true，會把所有零件變成統一的塑膠質感
+            // (若載入具備真實 PBR 紋理的高級模型，建議設為 false 以保留原生材質)
+            forcePlasticMaterial: true,
+            defaultRoughness: 0.6,
+            defaultMetalness: 0.0,
+
+            // 全域排除染色關鍵字：
+            // 只要材質名稱包含這些字眼，就會被視為「結構件」而拒絕染色，保持原始外觀
+            excludeColorKeywords: ['steel', 'carbon']
+        };
+
+        // 模組化設定：預設零件顏色配置 (開發者可在此輕鬆修改)
+        // part: 零件名稱 (必填，模糊比對)
+        // material: 材質名稱 (選填，若一個零件有多種材質，可指定只改變其中一種。若不填則預設改變全體並排除金屬)
+        // color: 目標顏色色碼
+        const PartColorOverrides = [
+            { part: "base", color: 0xff8800 }, // 沒指定 material，套用於底座上所有非金屬的材質
+            // { part: "crane", material: "White", color: 0x00ff00 }, // 範例：只把吊臂中的「白色材質」改成綠色
+        ];
+
+        // 1. 初始化場景、相機與渲染器
+        const scene = new THREE.Scene();
+        // scene.background = new THREE.Color(0x111111); // 讓 CSS 的漸層背景透出來
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 2, 5);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        document.body.appendChild(renderer.domElement);
+
+        // 2. 加入光照
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+        dirLight.position.set(5, 10, 7.5);
+        scene.add(dirLight);
+
+        // 3. 加入攝影機軌道控制 (OrbitControls)
+        const orbit = new OrbitControls(camera, renderer.domElement);
+        orbit.enableDamping = true;
+        orbit.dampingFactor = 0.05;
+
+        // 4. 加入變形控制 (TransformControls)
+        const transformControl = new TransformControls(camera, renderer.domElement);
+        transformControl.setSpace('world');
+        transformControl.addEventListener('dragging-changed', function (event) {
+            orbit.enabled = !event.value;
+        });
+        transformControl.addEventListener('change', () => forceRender = true);
+        scene.add(transformControl);
+
+        // 5. 模型加載器與相機自適應對齊
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let loadedModel = null;
+
+        function loadRobotModel(url) {
+            if (loadedModel) {
+                selectMesh(null);
+                scene.remove(loadedModel);
+            }
+            const loader = new GLTFLoader();
+            loader.load(url, function (gltf) {
+                loadedModel = gltf.scene;
+                const clonedMaterials = {};
+
+                // 讀取舊材質並修復 KHR_materials_pbrSpecularGlossiness 顏色
+                const json = gltf.parser.json;
+                const matMap = {};
+                if (json.materials) {
+                    json.materials.forEach(m => {
+                        if (m.name && m.extensions && m.extensions.KHR_materials_pbrSpecularGlossiness) {
+                            matMap[m.name] = m.extensions.KHR_materials_pbrSpecularGlossiness;
+                        }
+                    });
+                }
+
+                loadedModel.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        child.frustumCulled = false;
+                        if (child.material.name && matMap[child.material.name]) {
+                            const sg = matMap[child.material.name];
+                            if (sg.diffuseFactor) {
+                                child.material.color.fromArray(sg.diffuseFactor);
+                                if (sg.diffuseFactor[0] === 0 && sg.diffuseFactor[1] === 0 && sg.diffuseFactor[2] === 0) {
+                                    if (sg.specularFactor) child.material.color.fromArray(sg.specularFactor);
+                                }
+                            }
+                        }
+
+                        // 統一 PBR 質感覆寫
+                        if (AppConfig.forcePlasticMaterial) {
+                            child.material.metalness = AppConfig.defaultMetalness;
+                            child.material.roughness = AppConfig.defaultRoughness;
+                        }
+
+                        // 根據上方的 PartColorOverrides 設定，動態套用客製化顏色
+                        const partNameToCheck = (child.name + (child.parent ? child.parent.name : "")).toLowerCase();
+                        const matName = (child.material.name || "").toLowerCase();
+
+                        for (const rule of PartColorOverrides) {
+                            if (partNameToCheck.includes(rule.part.toLowerCase())) {
+                                // 1. 若設定檔有明確指定要針對哪一種材質，就必須符合該材質名稱
+                                if (rule.material && !matName.includes(rule.material.toLowerCase())) {
+                                    continue;
+                                }
+
+                                // 2. 若沒有特別指定材質，則預設排除 AppConfig.excludeColorKeywords 裡定義的金屬螺絲等不需染色的部位
+                                if (!rule.material) {
+                                    let isExcluded = false;
+                                    for (const keyword of AppConfig.excludeColorKeywords) {
+                                        if (matName.includes(keyword.toLowerCase())) {
+                                            isExcluded = true;
+                                            break;
+                                        }
+                                    }
+                                    if (isExcluded) continue;
+                                }
+
+                                const cacheKey = child.material.uuid + '_' + rule.color;
+                                if (!clonedMaterials[cacheKey]) {
+                                    const newMat = child.material.clone();
+                                    newMat.color.setHex(rule.color);
+                                    clonedMaterials[cacheKey] = newMat;
+                                }
+                                child.material = clonedMaterials[cacheKey];
+                                break; // 找到符合的第一條規則並套用後就跳出
+                            }
+                        }
+
+                        child.material.needsUpdate = true;
+                    }
+                });
+
+                scene.add(loadedModel);
+
+                // 自動計算相機自適應對齊
+                const box = new THREE.Box3().setFromObject(loadedModel);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+
+                window.robotCenter = center.clone();
+                window.robotDist = maxDim * AppConfig.cameraDistanceMultiplier;
+
+                // 設定為使用者指定的初始視角 (從 Admin Mode 取得)
+                camera.position.set(-0.39, 0.28, 0.26);
+                orbit.target.set(-0.03, 0.05, -0.02);
+                orbit.update();
+
+                // 計算有效根節點 (跳過單一包裝節點如 Scene / root，達到通用適應性)
+                let effectiveRoot = loadedModel;
+                while (effectiveRoot.children.length === 1 && !effectiveRoot.children[0].isMesh) {
+                    effectiveRoot = effectiveRoot.children[0];
+                }
+                loadedModel.userData.effectiveRoot = effectiveRoot;
+                forceRender = true;
+            }, undefined, function (error) {
+                console.error('載入模型時發生錯誤:', error);
+            });
+        }
+
+        // 6. 處理選取零件邏輯與高亮
+        let isDragging = false;
+        let selectedGroup = null;
+
+        function selectGroup(group, mesh = null) {
+            const partInfo = document.getElementById('part-info');
+            const groupName = document.getElementById('group-name');
+            const partName = document.getElementById('part-name');
+
+            if (selectedGroup) {
+                selectedGroup = null;
+                transformControl.detach();
+            }
+
+            if (group) {
+                selectedGroup = group;
+                transformControl.attach(selectedGroup);
+                groupName.textContent = group.name || '未命名群組';
+                partName.textContent = mesh ? (mesh.name || '未命名零件') : '無';
+                partInfo.style.display = 'block';
+            } else {
+                partInfo.style.display = 'none';
+            }
+            forceRender = true;
+        }
+
+        let pointerDownPos = new THREE.Vector2();
+
+        window.addEventListener('pointerdown', (event) => {
+            pointerDownPos.set(event.clientX, event.clientY);
+        });
+
+        window.addEventListener('pointerup', (event) => {
+            if (transformControl.dragging) return;
+
+            // 檢查滑鼠按下到放開的距離，如果超過 5 像素代表是拖曳 (如旋轉視角)，不觸發選取
+            const dist = Math.hypot(event.clientX - pointerDownPos.x, event.clientY - pointerDownPos.y);
+            if (dist > 5) return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            if (loadedModel) {
+                const intersects = raycaster.intersectObject(loadedModel, true);
+                const hit = intersects.find(i => i.object.isMesh);
+
+                if (hit) {
+                    let obj = hit.object;
+                    let targetGroup = obj;
+
+                    // 往上尋找最上層的零件節點 (跳過外殼，使用有效根節點判斷)
+                    const effectiveRoot = loadedModel.userData.effectiveRoot || loadedModel;
+                    while (obj.parent && obj.parent !== effectiveRoot && obj.parent !== scene && obj.parent !== loadedModel) {
+                        obj = obj.parent;
+                        targetGroup = obj;
+                    }
+
+                    selectGroup(targetGroup, hit.object);
+                } else {
+                    selectGroup(null);
+                }
+            }
+        });
+
+        // 7. 監聽按鍵事件
+        window.addEventListener('keydown', function (event) {
+            switch (event.key.toLowerCase()) {
+                case 'escape': selectGroup(null); break;
+            }
+        });
+
+        // 8. 視角切換動畫邏輯
+        let cameraAnimFrame = null;
+        function moveCameraTo(targetPos) {
+            forceRender = true;
+            if (!window.robotCenter) return;
+
+            // 如果已經有動畫在跑，先取消它避免打架
+            if (cameraAnimFrame) {
+                cancelAnimationFrame(cameraAnimFrame);
+            }
+
+            const startPos = camera.position.clone();
+            const duration = 600;
+            const startTime = performance.now();
+
+            function updateCam(time) {
+                const elapsed = time - startTime;
+                const t = Math.min(elapsed / duration, 1.0);
+                const ease = 1 - Math.pow(1 - t, 4); // Quartic ease-out
+
+                camera.position.lerpVectors(startPos, targetPos, ease);
+                orbit.target.copy(window.robotCenter);
+                orbit.update();
+
+                if (t < 1.0) {
+                    cameraAnimFrame = requestAnimationFrame(updateCam);
+                } else {
+                    cameraAnimFrame = null;
+                }
+            }
+            cameraAnimFrame = requestAnimationFrame(updateCam);
+        }
+
+        document.getElementById('btn-top').addEventListener('click', () => {
+            if (window.robotCenter) {
+                const p = window.robotCenter.clone();
+                p.y += window.robotDist * 1.2;
+                p.z += 0.001; // 防止萬向鎖
+                moveCameraTo(p);
+            }
+        });
+
+        document.getElementById('btn-front').addEventListener('click', () => {
+            if (window.robotCenter) {
+                const p = window.robotCenter.clone();
+                p.z -= window.robotDist;
+                moveCameraTo(p);
+            }
+        });
+
+        document.getElementById('btn-side').addEventListener('click', () => {
+            if (window.robotCenter) {
+                const p = window.robotCenter.clone();
+                p.x += window.robotDist;
+                moveCameraTo(p);
+            }
+        });
+
+        let isWireframe = false;
+        let isTransparent = false;
+
+        // 全域快取，用來共用 EdgesGeometry 與材質，大幅提升效能
+        const edgesGeoCache = new Map();
+        const edgesMatCache = new Map();
+
+        document.getElementById('btn-wireframe').addEventListener('click', (e) => {
+            isWireframe = !isWireframe;
+            e.target.classList.toggle('active', isWireframe);
+            if (loadedModel) {
+                loadedModel.traverse((child) => {
+                    if (child.isMesh) {
+                        // 1. 產生乾淨的外框線 (加入快取機制優化 CPU 與 GPU 效能)
+                        if (!child.userData.edgesLine) {
+                            // 快取 Geometry，相同形狀的零件不需重複計算
+                            let edges = edgesGeoCache.get(child.geometry);
+                            if (!edges) {
+                                edges = new THREE.EdgesGeometry(child.geometry, 15);
+                                edgesGeoCache.set(child.geometry, edges);
+                            }
+
+                            // 快取 Material，相同顏色的外框共用材質以減少渲染狀態切換
+                            const matColorHex = (child.material && child.material.color) ? child.material.color.getHex() : 0x00e5ff;
+                            let lineMat = edgesMatCache.get(matColorHex);
+                            if (!lineMat) {
+                                lineMat = new THREE.LineBasicMaterial({ color: matColorHex });
+                                edgesMatCache.set(matColorHex, lineMat);
+                            }
+
+                            const line = new THREE.LineSegments(edges, lineMat);
+                            child.add(line);
+                            child.userData.edgesLine = line;
+                        }
+
+                        child.userData.edgesLine.visible = isWireframe;
+
+                        // 2. 隱藏原本的實體面 (修復消失 Bug：將原始狀態記錄在 material.userData 內)
+                        if (child.material) {
+                            if (child.material.userData.origColorWrite === undefined) {
+                                child.material.userData.origColorWrite = child.material.colorWrite;
+                                child.material.userData.origDepthWrite = child.material.depthWrite;
+                            }
+
+                            if (isWireframe) {
+                                child.material.colorWrite = false;
+                                child.material.depthWrite = false;
+                            } else {
+                                child.material.colorWrite = child.material.userData.origColorWrite;
+                                child.material.depthWrite = child.material.userData.origDepthWrite;
+                            }
+                            child.material.needsUpdate = true;
+                        }
+                    }
+                });
+                forceRender = true;
+            }
+        });
+
+        document.getElementById('btn-transparent').addEventListener('click', (e) => {
+            isTransparent = !isTransparent;
+            e.target.classList.toggle('active', isTransparent);
+            if (loadedModel) {
+                loadedModel.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const partNameToCheck = (child.name + (child.parent ? child.parent.name : "")).toLowerCase();
+                        if (partNameToCheck.includes('base')) {
+                            return; // 略過底座，讓底座保持不透明
+                        }
+
+                        // Store original values if not stored yet
+                        if (child.material.userData.origTransparent === undefined) {
+                            child.material.userData.origTransparent = child.material.transparent;
+                            child.material.userData.origOpacity = child.material.opacity;
+                            child.material.userData.origDepthWrite = child.material.depthWrite;
+                            child.material.userData.origBlending = child.material.blending;
+                        }
+
+                        if (isTransparent) {
+                            child.material.transparent = true;
+                            child.material.opacity = 0.45; // 提高一點不透明度，讓它像半透明塑膠
+                            child.material.depthWrite = true; // 開啟深度寫入，解決顏色髒髒的混合感
+                            child.material.blending = THREE.NormalBlending; // 恢復正常混合
+                        } else {
+                            child.material.transparent = child.material.userData.origTransparent;
+                            child.material.opacity = child.material.userData.origOpacity;
+                            child.material.depthWrite = child.material.userData.origDepthWrite;
+                            child.material.blending = child.material.userData.origBlending;
+                        }
+                        child.material.needsUpdate = true;
+                    }
+                });
+                forceRender = true;
+            }
+        });
+
+        // 9. 處理視窗大小改變
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            forceRender = true;
+        });
+
+        // Admin Mode Toggle
+        let infoClickCount = 0;
+        let infoClickTimer = null;
+        let isAdminMode = false;
+
+        document.getElementById('info').addEventListener('click', () => {
+            infoClickCount++;
+            if (infoClickCount >= 3) {
+                isAdminMode = !isAdminMode;
+                document.getElementById('admin-panel').style.display = isAdminMode ? 'block' : 'none';
+                infoClickCount = 0;
+                forceRender = true;
+            }
+            clearTimeout(infoClickTimer);
+            infoClickTimer = setTimeout(() => { infoClickCount = 0; }, 400);
+        });
+
+        // 10. 渲染迴圈
+        function animate() {
+            requestAnimationFrame(animate);
+            orbit.update();
+
+            // 檢查攝影機是否移動，若移動則需要渲染
+            const cameraMoved = !camera.position.equals(lastCameraPos) || !camera.quaternion.equals(lastCameraRot);
+
+            if (cameraMoved || forceRender) {
+                renderer.render(scene, camera);
+                lastCameraPos.copy(camera.position);
+                lastCameraRot.copy(camera.quaternion);
+                forceRender = false;
+
+                if (isAdminMode) {
+                    document.getElementById('admin-pos').innerText =
+                        `${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)}`;
+                    document.getElementById('admin-rot').innerText =
+                        `${(camera.rotation.x * 180 / Math.PI).toFixed(1)}°, ${(camera.rotation.y * 180 / Math.PI).toFixed(1)}°, ${(camera.rotation.z * 180 / Math.PI).toFixed(1)}°`;
+                    document.getElementById('admin-target').innerText =
+                        `${orbit.target.x.toFixed(2)}, ${orbit.target.y.toFixed(2)}, ${orbit.target.z.toFixed(2)}`;
+                }
+            }
+        }
+        animate();
+
+        // 啟動初始模型載入
+        loadRobotModel(AppConfig.defaultModelUrl);
+    </script>
+</body>
+
+</html>

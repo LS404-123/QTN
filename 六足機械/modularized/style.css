@@ -203,6 +203,31 @@ button {
     color: white;
 }
 
+.btn-portal {
+    background: linear-gradient(135deg, #ff9f0a, #ff3b30);
+    color: white;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: var(--radius-md);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 4px 12px rgba(255, 159, 10, 0.2);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-portal:hover {
+    transform: scale(0.98);
+    opacity: 0.9;
+    box-shadow: 0 2px 6px rgba(255, 159, 10, 0.15);
+}
+
+.btn-portal:active {
+    transform: scale(0.95);
+}
+
 button:hover {
     transform: scale(0.98);
     opacity: 0.9;

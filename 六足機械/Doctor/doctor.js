@@ -14,7 +14,11 @@ const AppConfig = {
     forcePlasticMaterial: true,
     defaultRoughness: 0.6,
     defaultMetalness: 0.0,
-    excludeColorKeywords: ['steel', 'carbon']
+    excludeColorKeywords: ['steel', 'carbon'],
+
+    // BackSide 描邊參數配置 (控制每個零件的黑色外框)
+    outlineThickness: 1.005, // 粗細厚度：通常介於 1.001 (極細) 到 1.005 (較粗) 之間
+    outlineColor: 0x000000   // 描邊色彩：0x000000 為黑色
 };
 
 const PartColorOverrides = [
@@ -24,6 +28,7 @@ const PartColorOverrides = [
 const container = document.getElementById('viewer-container');
 let scene, camera, renderer, orbit, transformControl;
 let composer, outlinePass, baseOutlinePass;
+let targetFocusPos = null; // 用於平滑對焦的目標位置
 let loadedModel = null;
 let forceRender = true;
 const lastCameraPos = new THREE.Vector3();
@@ -78,24 +83,24 @@ function init3D() {
     // 後處理效果 (Post-processing) 設定
     // ==========================================
     composer = new EffectComposer(renderer);
-    
+
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
 
-    // 選取高亮用的 OutlinePass (發光強、靛藍色)
+    // 選取高亮用的 OutlinePass (發光強、診斷紅色)
     outlinePass = new OutlinePass(new THREE.Vector2(container.clientWidth, container.clientHeight), scene, camera);
     outlinePass.edgeStrength = 4.0;
     outlinePass.edgeGlow = 1.0;
     outlinePass.edgeThickness = 3.0;
-    outlinePass.visibleEdgeColor.set('#818cf8');
-    outlinePass.hiddenEdgeColor.set('#1e1b4b');
+    outlinePass.visibleEdgeColor.set('#f87171');
+    outlinePass.hiddenEdgeColor.set('#581c1c');
     composer.addPass(outlinePass);
 
     const outputPass = new OutputPass();
     composer.addPass(outputPass);
 
     window.addEventListener('resize', onWindowResize);
-    
+
     setupInteractions();
     setupUIControls();
     loadRobotModel(AppConfig.defaultModelUrl);
@@ -114,6 +119,13 @@ function onWindowResize() {
 // 模型載入與處理
 // ==========================================
 function loadRobotModel(url) {
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) {
+        const loadingText = loadingOverlay.querySelector('.loading-text');
+        if (loadingText) loadingText.textContent = '載入機器人模型中...';
+        loadingOverlay.style.display = 'flex';
+    }
+
     if (loadedModel) {
         selectGroup(null);
         scene.remove(loadedModel);
@@ -124,7 +136,7 @@ function loadRobotModel(url) {
     loader.setDRACOLoader(dracoLoader);
     loader.load(url, function (gltf) {
         console.log('gltf loaded:', gltf);
-        
+
         const processLoadedModel = (model) => {
             loadedModel = model;
             const clonedMaterials = {};
@@ -181,7 +193,7 @@ function loadRobotModel(url) {
                                 clonedMaterials[cacheKey] = newMat;
                             }
                             child.material = clonedMaterials[cacheKey];
-                            break; 
+                            break;
                         }
                     }
                     child.material.needsUpdate = true;
@@ -200,14 +212,14 @@ function loadRobotModel(url) {
 
             meshesToOutline.forEach((child) => {
                 const outlineMat = new THREE.MeshBasicMaterial({
-                    color: 0x000000,
+                    color: AppConfig.outlineColor,
                     side: THREE.BackSide
                 });
                 const outlineMesh = new THREE.Mesh(child.geometry, outlineMat);
-                // 縮放設定為 1.002 使得描邊極細
-                outlineMesh.scale.set(1.002, 1.002, 1.002);
+                const t = AppConfig.outlineThickness;
+                outlineMesh.scale.set(t, t, t);
                 outlineMesh.userData.isOutline = true;
-                outlineMesh.raycast = () => {}; // 停用射線偵測避免影響選取
+                outlineMesh.raycast = () => { }; // 停用射線偵測避免影響選取
                 child.add(outlineMesh);
             });
 
@@ -229,6 +241,7 @@ function loadRobotModel(url) {
             }
             loadedModel.userData.effectiveRoot = effectiveRoot;
             forceRender = true;
+            if (loadingOverlay) loadingOverlay.style.display = 'none';
         };
 
         if (gltf.scene) {
@@ -245,10 +258,12 @@ function loadRobotModel(url) {
                 processLoadedModel(group);
             }).catch((err) => {
                 console.error('自建場景時解析節點失敗:', err);
+                if (loadingOverlay) loadingOverlay.style.display = 'none';
             });
         }
     }, undefined, function (error) {
         console.error('載入模型時發生錯誤:', error);
+        if (loadingOverlay) loadingOverlay.style.display = 'none';
     });
 }
 
@@ -270,24 +285,35 @@ function selectGroup(group, mesh = null) {
         highlightedObject = null;
         transformControl.detach();
         if (outlinePass) outlinePass.selectedObjects = [];
+        
+        // 取消選取時，相機目標平滑滑回機器人整體中心
+        if (window.robotCenter) {
+            targetFocusPos = window.robotCenter.clone();
+        } else {
+            targetFocusPos = null;
+        }
     }
 
     if (group) {
         selectedGroup = group;
-        highlightedObject = mesh || group; 
+        highlightedObject = group;
 
         if (outlinePass) outlinePass.selectedObjects = [highlightedObject];
 
         transformControl.attach(selectedGroup);
+        
+        // 計算選中零件包圍盒的世界座標幾何中心，開啟對焦
+        const box = new THREE.Box3().setFromObject(highlightedObject);
+        targetFocusPos = box.getCenter(new THREE.Vector3());
         const gName = group.name || '未命名群組';
         const pName = mesh ? (mesh.name || '未命名零件') : '無';
-        
+
         groupNameEl.textContent = gName;
         partNameEl.textContent = pName;
         partInfo.style.display = 'block';
-        
+
         // Setup marking button
-        if(inspectedParts.includes(gName)) {
+        if (inspectedParts.includes(gName)) {
             btnMark.style.display = 'none';
         } else {
             btnMark.style.display = 'block';
@@ -370,7 +396,7 @@ function moveCameraTo(targetPos) {
     function updateCam(time) {
         const elapsed = time - startTime;
         const t = Math.min(elapsed / duration, 1.0);
-        const ease = 1 - Math.pow(1 - t, 4); 
+        const ease = 1 - Math.pow(1 - t, 4);
         camera.position.lerpVectors(startPos, targetPos, ease);
         orbit.target.copy(window.robotCenter);
         orbit.update();
@@ -385,7 +411,7 @@ function setupUIControls() {
         if (window.robotCenter) {
             const p = window.robotCenter.clone();
             p.y += window.robotDist * 1.2;
-            p.z += 0.001; 
+            p.z += 0.001;
             moveCameraTo(p);
         }
     });
@@ -414,37 +440,33 @@ function setupUIControls() {
     document.getElementById('btn-wireframe').addEventListener('click', (e) => {
         isWireframe = !isWireframe;
         e.target.classList.toggle('active', isWireframe);
-        
+
         if (isWireframe && isTransparent) {
             isTransparent = false;
             document.getElementById('btn-transparent').classList.remove('active');
         }
-        
+
         if (loadedModel) {
-            if (isWireframe) {
-                const loadingOverlay = document.getElementById('loading-overlay');
-                loadingOverlay.style.display = 'flex';
-                
-                setTimeout(() => {
-                    ensureWireframeEdges();
-                    updateMaterials();
-                    loadingOverlay.style.display = 'none';
-                }, 30);
-            } else {
+            const loadingOverlay = document.getElementById('loading-overlay');
+            loadingOverlay.style.display = 'flex';
+
+            setTimeout(() => {
+                ensureWireframeEdges();
                 updateMaterials();
-            }
+                loadingOverlay.style.display = 'none';
+            }, 30);
         }
     });
 
     document.getElementById('btn-transparent').addEventListener('click', (e) => {
         isTransparent = !isTransparent;
         e.target.classList.toggle('active', isTransparent);
-        
+
         if (isTransparent && isWireframe) {
             isWireframe = false;
             document.getElementById('btn-wireframe').classList.remove('active');
         }
-        
+
         if (loadedModel) {
             updateMaterials();
         }
@@ -456,9 +478,9 @@ function setupUIControls() {
         e.target.title = isLight ? '切換暗色模式' : '切換淺色模式';
         
         if (outlinePass) {
-            const primaryColorHex = getComputedStyle(document.body).getPropertyValue('--primary-color').trim();
-            outlinePass.visibleEdgeColor.set(primaryColorHex);
-            outlinePass.hiddenEdgeColor.set(isLight ? '#d2d3db' : '#1e1b4b');
+            const dangerColorHex = getComputedStyle(document.body).getPropertyValue('--danger-color').trim();
+            outlinePass.visibleEdgeColor.set(dangerColorHex);
+            outlinePass.hiddenEdgeColor.set(isLight ? '#ef4444' : '#581c1c');
         }
         
         forceRender = true;
@@ -489,7 +511,7 @@ function setupUIControls() {
     function updateMaterials() {
         loadedModel.traverse((child) => {
             if (child.isMesh && child.userData.isOutline) {
-                child.visible = !isWireframe;
+                child.visible = !isWireframe && !isTransparent;
                 return;
             }
             if (child.isMesh && child.material) {
@@ -520,10 +542,8 @@ function setupUIControls() {
 
                 if (isTransparent && !isBase) {
                     targetTransparent = true;
-                    targetOpacity = 0.45;
-                    if (!isWireframe) {
-                        targetDepthWrite = true;
-                    }
+                    targetOpacity = 0.45; // 調整透明度以利透視
+                    targetDepthWrite = false; // 透明模式下必須關閉 depthWrite，否則會阻擋內部零件繪製
                     targetBlending = THREE.NormalBlending;
                 }
 
@@ -532,9 +552,9 @@ function setupUIControls() {
                 child.material.transparent = targetTransparent;
                 child.material.opacity = targetOpacity;
                 child.material.blending = targetBlending;
-                
+
                 child.material.needsUpdate = true;
-                
+
                 if (child.userData.edgesLine) {
                     child.userData.edgesLine.visible = isWireframe;
                 }
@@ -579,20 +599,20 @@ function updateProgress() {
 }
 
 function markPartAsInspected(partName) {
-    if(!inspectedParts.includes(partName)) {
+    if (!inspectedParts.includes(partName)) {
         inspectedParts.push(partName);
-        
+
         const list = document.getElementById('inspected-list');
         // Remove empty state if present
         const emptyState = list.querySelector('.empty-state');
-        if(emptyState) emptyState.remove();
+        if (emptyState) emptyState.remove();
 
         const tag = document.createElement('div');
         tag.className = 'part-tag';
         tag.innerHTML = `✅ ${partName} <span class="remove" onclick="removeInspected('${partName}')">✖</span>`;
         tag.id = `tag-${partName}`;
         list.appendChild(tag);
-        
+
         updateProgress();
         addChatMessage('系統', `已確認 ${partName} 運作正常，加入已排查清單。`, 'ai');
         updateQuickReplies([
@@ -604,12 +624,12 @@ function markPartAsInspected(partName) {
     }
 }
 
-window.removeInspected = function(partName) {
+window.removeInspected = function (partName) {
     inspectedParts = inspectedParts.filter(p => p !== partName);
     const tag = document.getElementById(`tag-${partName}`);
-    if(tag) tag.remove();
-    
-    if(inspectedParts.length === 0) {
+    if (tag) tag.remove();
+
+    if (inspectedParts.length === 0) {
         document.getElementById('inspected-list').innerHTML = `<div class="empty-state">尚未排查任何零件</div>`;
     }
     updateProgress();
@@ -677,7 +697,22 @@ function handleUserReply(text) {
 // ==========================================
 function animate() {
     requestAnimationFrame(animate);
+
+    // 1. 零件選取時的相機重心平滑滑動對焦 (Lerp)
+    if (targetFocusPos && orbit.target.distanceTo(targetFocusPos) > 0.001) {
+        orbit.target.lerp(targetFocusPos, 0.08);
+        forceRender = true;
+    }
+
     orbit.update();
+
+    // 2. 選取外框紅色脈衝呼吸閃爍 (Pulsating Outline Glow)
+    if (outlinePass && outlinePass.selectedObjects.length > 0) {
+        const time = performance.now() * 0.004; // 調整閃爍頻率
+        outlinePass.edgeStrength = 3.5 + Math.sin(time) * 1.5; // 在 2.0 到 5.0 之間擺動
+        outlinePass.edgeGlow = 0.8 + Math.sin(time) * 0.4;     // 在 0.4 到 1.2 之間擺動
+        forceRender = true;
+    }
 
     const cameraMoved = !camera.position.equals(lastCameraPos) || !camera.quaternion.equals(lastCameraRot);
     if (cameraMoved || forceRender) {

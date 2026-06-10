@@ -558,6 +558,23 @@
         document.getElementById('btn-transparent').addEventListener('click', (e) => {
             isTransparent = !isTransparent;
             e.target.classList.toggle('active', isTransparent);
+            
+            // 互斥線框模式
+            if (isTransparent && isWireframe) {
+                isWireframe = false;
+                document.getElementById('btn-wireframe').classList.remove('active');
+                loadedModel.traverse((child) => {
+                    if (child.isMesh && child.userData.edgesLine) {
+                        child.userData.edgesLine.visible = false;
+                        if (child.material) {
+                            child.material.colorWrite = child.material.userData.origColorWrite !== undefined ? child.material.userData.origColorWrite : true;
+                            child.material.depthWrite = child.material.userData.origDepthWrite !== undefined ? child.material.userData.origDepthWrite : true;
+                            child.material.needsUpdate = true;
+                        }
+                    }
+                });
+            }
+
             if (loadedModel) {
                 loadedModel.traverse((child) => {
                     if (child.isMesh && child.material) {
@@ -576,8 +593,8 @@
 
                         if (isTransparent) {
                             child.material.transparent = true;
-                            child.material.opacity = 0.45; // 提高一點不透明度，讓它像半透明塑膠
-                            child.material.depthWrite = true; // 開啟深度寫入，解決顏色髒髒的混合感
+                            child.material.opacity = 0.3; // 調整透明度
+                            child.material.depthWrite = false; // 關閉深度寫入，解決遮擋問題
                             child.material.blending = THREE.NormalBlending; // 恢復正常混合
                         } else {
                             child.material.transparent = child.material.userData.origTransparent;

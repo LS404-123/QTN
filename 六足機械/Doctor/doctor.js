@@ -51,7 +51,7 @@ let totalPartsCount = 20; // 假定的總零件數，用來計算進度
 function init3D() {
     scene = new THREE.Scene();
 
-    camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+    camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.01, 1000);
     camera.position.set(0, 2, 5);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });

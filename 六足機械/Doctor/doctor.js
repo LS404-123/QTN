@@ -7,11 +7,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-// ==========================================
-// 3D 檢視器狀態與設定
-// ==========================================
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const AppConfig = {
-    defaultModelUrl: '/new robot.glb',
+    defaultModelUrl: isLocal ? '/new_robot.glb' : 'https://github.com/LS404-123/robot_simulation-/releases/download/v1.0.0/new_robot.glb',
     cameraDistanceMultiplier: 1.5,
     forcePlasticMaterial: true,
     defaultRoughness: 0.6,

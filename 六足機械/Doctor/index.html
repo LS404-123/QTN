@@ -170,13 +170,10 @@
         const lastCameraPos = new THREE.Vector3();
         const lastCameraRot = new THREE.Quaternion();
 
-        // ==========================================
-        // 全域應用程式設定 (AppConfig)
-        // ==========================================
-        // 這些參數決定了 3D 檢視器的通用行為，替換此處數值即可輕鬆套用至不同專案或模型
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         const AppConfig = {
             // 預設載入的模型路徑
-            defaultModelUrl: '../new robot.glb',
+            defaultModelUrl: isLocal ? '/new_robot.glb' : 'https://github.com/LS404-123/robot_simulation-/releases/download/v1.0.0/new_robot.glb',
 
             // 相機距離倍率：控制「俯視/正面/側面」運鏡時，相機拉遠的距離 (根據模型大小自動計算的乘數)
             cameraDistanceMultiplier: 1.5,

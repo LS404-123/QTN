@@ -26,7 +26,7 @@ const PartColorOverrides = [
 ];
 
 const container = document.getElementById('viewer-container');
-let scene, camera, renderer, orbit, transformControl;
+let scene, camera, renderer, orbit, transformControl, gizmoScene;
 let composer, outlinePass, baseOutlinePass;
 let targetFocusPos = null; // 用於平滑對焦的目標位置
 let loadedModel = null;
@@ -70,6 +70,12 @@ function init3D() {
     orbit = new OrbitControls(camera, renderer.domElement);
     orbit.enableDamping = true;
     orbit.dampingFactor = 0.05;
+    orbit.addEventListener('start', () => {
+        targetFocusPos = null; // 使用者開始手動旋轉/平移相機時，立即中止自動對焦
+    });
+
+    // 初始化 Gizmo 專用渲染場景
+    gizmoScene = new THREE.Scene();
 
     transformControl = new TransformControls(camera, renderer.domElement);
     transformControl.setSpace('world');
@@ -77,7 +83,11 @@ function init3D() {
         orbit.enabled = !event.value;
     });
     transformControl.addEventListener('change', () => forceRender = true);
-    scene.add(transformControl.getHelper());
+    
+    // 自定義 Gizmo 顏色以符合 UI 色盤
+    const helper = transformControl.getHelper();
+    gizmoScene.add(helper);
+    setupGizmoVisuals();
 
     // ==========================================
     // 後處理效果 (Post-processing) 設定
@@ -483,6 +493,7 @@ function setupUIControls() {
             outlinePass.hiddenEdgeColor.set(isLight ? '#ef4444' : '#581c1c');
         }
         
+        setupGizmoVisuals();
         forceRender = true;
     });
 
@@ -699,9 +710,14 @@ function animate() {
     requestAnimationFrame(animate);
 
     // 1. 零件選取時的相機重心平滑滑動對焦 (Lerp)
-    if (targetFocusPos && orbit.target.distanceTo(targetFocusPos) > 0.001) {
-        orbit.target.lerp(targetFocusPos, 0.08);
-        forceRender = true;
+    if (targetFocusPos) {
+        if (orbit.target.distanceTo(targetFocusPos) > 0.005) {
+            orbit.target.lerp(targetFocusPos, 0.08);
+            forceRender = true;
+        } else {
+            orbit.target.copy(targetFocusPos);
+            targetFocusPos = null; // 抵達目標零件中心，釋放相機鎖定，允許手動平移 (Pan)
+        }
     }
 
     orbit.update();
@@ -718,8 +734,19 @@ function animate() {
     if (cameraMoved || forceRender) {
         if (composer) {
             composer.render();
+            // 在 OutlinePass 渲染完成後繪製 Gizmo，確保其不被高亮框線覆蓋或影響
+            if (renderer && gizmoScene) {
+                renderer.autoClear = false;
+                renderer.render(gizmoScene, camera);
+                renderer.autoClear = true;
+            }
         } else {
             renderer.render(scene, camera);
+            if (renderer && gizmoScene) {
+                renderer.autoClear = false;
+                renderer.render(gizmoScene, camera);
+                renderer.autoClear = true;
+            }
         }
         lastCameraPos.copy(camera.position);
         lastCameraRot.copy(camera.quaternion);
@@ -734,6 +761,112 @@ function animate() {
                 `${orbit.target.x.toFixed(2)}, ${orbit.target.y.toFixed(2)}, ${orbit.target.z.toFixed(2)}`;
         }
     }
+}
+
+function setupGizmoVisuals() {
+    if (!transformControl) return;
+
+    // 設定 Gizmo 尺寸更精緻，不遮擋零件
+    transformControl.setSize(0.75);
+
+    const gizmo = transformControl._gizmo;
+    if (!gizmo || !gizmo.materialLib) return;
+
+    const materialLib = gizmo.materialLib;
+
+    // 取得當前 UI 的 CSS 主題顏色
+    const style = getComputedStyle(document.body);
+    const primary = style.getPropertyValue('--primary-color').trim() || '#818cf8';
+    const success = style.getPropertyValue('--success-color').trim() || '#34d399';
+    const danger = style.getPropertyValue('--danger-color').trim() || '#f87171';
+    const textColor = style.getPropertyValue('--text-color').trim() || '#f3f4f6';
+    const isLight = document.body.classList.contains('light-mode');
+
+    // 互動狀態 (hover / active) 顏色，深色模式用明亮科技青 (#22d3ee)，淺色模式用深青 (#0891b2)
+    const activeColor = isLight ? '#0891b2' : '#22d3ee';
+
+    // 1. 實心軸與箭頭 (Opaque) - 關閉透明度與混合，100% 避免 OutlinePass 後處理發光滲透
+    materialLib.xAxis.color.set(danger);
+    materialLib.xAxis.transparent = false;
+    materialLib.xAxis.opacity = 1.0;
+    materialLib.xAxis.depthTest = false;
+    materialLib.xAxis.depthWrite = false;
+
+    materialLib.yAxis.color.set(success);
+    materialLib.yAxis.transparent = false;
+    materialLib.yAxis.opacity = 1.0;
+    materialLib.yAxis.depthTest = false;
+    materialLib.yAxis.depthWrite = false;
+
+    materialLib.zAxis.color.set(primary);
+    materialLib.zAxis.transparent = false;
+    materialLib.zAxis.opacity = 1.0;
+    materialLib.zAxis.depthTest = false;
+    materialLib.zAxis.depthWrite = false;
+
+    materialLib.active.color.set(activeColor);
+    materialLib.active.transparent = false;
+    materialLib.active.opacity = 1.0;
+    materialLib.active.depthTest = false;
+    materialLib.active.depthWrite = false;
+
+    // 2. 半透明操作面 (Transparent) - 使用極低透明度 (0.1) 保持介面清爽低調
+    materialLib.xAxisTransparent.color.set(danger);
+    materialLib.xAxisTransparent.transparent = true;
+    materialLib.xAxisTransparent.opacity = 0.1;
+    materialLib.xAxisTransparent.depthTest = false;
+    materialLib.xAxisTransparent.depthWrite = false;
+
+    materialLib.yAxisTransparent.color.set(success);
+    materialLib.yAxisTransparent.transparent = true;
+    materialLib.yAxisTransparent.opacity = 0.1;
+    materialLib.yAxisTransparent.depthTest = false;
+    materialLib.yAxisTransparent.depthWrite = false;
+
+    materialLib.zAxisTransparent.color.set(primary);
+    materialLib.zAxisTransparent.transparent = true;
+    materialLib.zAxisTransparent.opacity = 0.1;
+    materialLib.zAxisTransparent.depthTest = false;
+    materialLib.zAxisTransparent.depthWrite = false;
+
+    materialLib.activeTransparent.color.set(activeColor);
+    materialLib.activeTransparent.transparent = true;
+    materialLib.activeTransparent.opacity = 0.2;
+    materialLib.activeTransparent.depthTest = false;
+    materialLib.activeTransparent.depthWrite = false;
+
+    // 3. 遍歷調整其他非 materialLib 輔助線與圓圈材質，使其與 UI 完美融合
+    const helper = transformControl.getHelper();
+    helper.traverse((child) => {
+        if (child.material) {
+            const name = child.name;
+            const mat = child.material;
+
+            mat.depthTest = false;
+            mat.depthWrite = false;
+
+            // 輔助延伸線 (helper)
+            if (child.isLine || child.isLineSegments || name === 'helper') {
+                mat.color.set(primary);
+                mat.transparent = true;
+                mat.opacity = 0.3;
+            }
+            // 旋轉外圈大圓環 (XYZE)
+            else if (name === 'XYZE') {
+                mat.color.set(textColor);
+                mat.transparent = true;
+                mat.opacity = 0.15;
+            }
+            // 中心控制塊 (XYZ) 與其他圓環 (E)
+            else if (name === 'XYZ' || name === 'E') {
+                mat.color.set(activeColor);
+                mat.transparent = true;
+                mat.opacity = 0.25;
+            }
+        }
+    });
+
+    forceRender = true;
 }
 
 // 啟動應用

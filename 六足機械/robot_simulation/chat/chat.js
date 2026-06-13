@@ -2,8 +2,8 @@
  * AI Chat Logic - 🤖 小六 AI 診斷助手
  */
 import { getDiagnosticState } from '../simulation/simulation.js';
-import STATIC_COSTAR_PROMPT from '../../../AI_Chatbot_Framework_COSTAR_EN.md?raw';
-import KINEMATICS_REFERENCE from '../simulation/Kinematics_Reference.md?raw';
+import STATIC_COSTAR_PROMPT from '../../../docs/chat_prompt/AI_Chatbot_Framework_COSTAR_EN.md?raw';
+import KINEMATICS_REFERENCE from '../../../docs/六足/模擬/Kinematics_Reference.md?raw';
 
 const ChatManager = {
     history: [],

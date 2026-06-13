@@ -10,9 +10,9 @@ Desktop.ini
 *.swo
 
 # Project specific
-13: .agents/
-14: buffer/
-15: Old_simulation/
+# .agents/
+# buffer/
+# Old_simulation/
 
 # Python
 __pycache__/

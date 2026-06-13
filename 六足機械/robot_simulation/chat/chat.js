@@ -3,7 +3,7 @@
  */
 import { getDiagnosticState } from '../simulation/simulation.js';
 import STATIC_COSTAR_PROMPT from '../../../docs/chat_prompt/AI_Chatbot_Framework_COSTAR_EN.md?raw';
-import KINEMATICS_REFERENCE from '../../../docs/六足/模擬/Kinematics_Reference.md?raw';
+import KINEMATICS_REFERENCE from './Kinematics_Reference.md?raw';
 
 const ChatManager = {
     history: [],
@@ -462,7 +462,7 @@ const ChatManager = {
   <Analytics_Data>卡死=${analytics.symptom.isClashing}, 穩定=${analytics.symptom.isStable}, 實際速度=${analytics.symptom.speed} mm/s, 顛簸程度=${analytics.symptom.hopRange} mm, 目前電量=${currentParams.batteryPct}%, 該電量預期速度(以第一孔 R=6.5mm 為基準)=${currentParams.expectedNormalSpeed} mm/s</Analytics_Data>
   <Parameter_Delta>當前滑桿偏離基準狀況：${parameterDeltaStr} | 物理指標變化：${metricsDeltaStr}</Parameter_Delta>
   <Golden_Rule_Error>${analytics.symptom.goldenRuleError} (違反=${analytics.symptom.isGoldenRuleViolated}，公式：藍桿長度 - 理想幾何長度。正值代表藍桿太長，負值代表藍桿太短)</Golden_Rule_Error>
-  <Mechanical_Params>${getParamStr('legLength', '腿長')}, ${getParamStr('footLength', '腳長/機器人高度')}, ${getParamStr('blueLink', '藍色直桿')}, ${getParamStr('bodyWidth', '身體半寬')}, ${getParamStr('crankRadius', '曲柄半徑')}, ${getParamStr('phaseDiff', '相位差')}°, ${getParamStr('gearboxShift', '齒輪箱位移')}</Mechanical_Params>
+  <Mechanical_Params>${getParamStr('legLength', '腳長')}, ${getParamStr('footLength', '腳高')}, ${getParamStr('blueLink', '直桿長度')}, ${getParamStr('bodyWidth', '機械人長度')}, ${getParamStr('crankRadius', '曲柄孔位')}, ${getParamStr('phaseDiff', '相位差')}°, ${getParamStr('gearboxShift', '齒輪箱位置')}</Mechanical_Params>
   <Performance_Baseline>馬達轉速=${currentParams.motorTargetSpeed} rad/s, 理論空載速度(Expected Normal Speed, 第一孔 R=6.5mm)=${currentParams.expectedNormalSpeed} mm/s, 預期重心起伏=${analytics.symptom.expectedHop} mm, 異常顛簸=${analytics.symptom.hasAbnormalBobbing}</Performance_Baseline>
   <Posture_Criteria>判斷姿勢：請比較「實際速度」與「理論空載速度」。若實際速度低於理論值，代表步態可能打滑或不佳；若相近或超越，則代表步態優良且高效率。</Posture_Criteria>${visualPrompt}
 </Robot_State>`;

@@ -44,3 +44,7 @@ AGENT_GUIDE.md
 AI_Framework.md
 reply.md
 test.md
+
+# Ignored docs folders
+docs/六足/
+docs/蹦跳/

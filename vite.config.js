@@ -10,9 +10,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
-        hexapod: resolve(import.meta.dirname, '六足機械/modularized/index.html'),
+        hexapod: resolve(import.meta.dirname, '六足機械/robot_simulation/index.html'),
         jumping: resolve(import.meta.dirname, '蹦跳機械/蹦跳機械.html'),
-        doctor: resolve(import.meta.dirname, '六足機械/Doctor/doctor.html'),
+        doctor: resolve(import.meta.dirname, '六足機械/doctor_analysis/doctor.html'),
       },
     },
   },

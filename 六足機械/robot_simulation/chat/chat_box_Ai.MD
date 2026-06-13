@@ -116,12 +116,12 @@ graph TD
 
 ## 確切的 Prompt 檔案位置與輸入細節清單 (Exact & Detail List of Inputs)
 
-Prompt 的組裝主要發生在 `c:\Users\LS404\Desktop\QTN\六足機械\modularized\chat.js` 裡面的 `getAIResponse(userText)` 函數中（約第 209 行至 290 行）。當呼叫 Gemini API (`callGeminiAPI`) 時，最終送入的 Payload 包含 4 個主要部分：`systemPrompt`、`finalUserText`、`history`、`imageData`。
+Prompt 的組裝主要發生在 `c:\Users\LS404\Desktop\QTN\六足機械\robot_simulation\chat\chat.js` 裡面的 `getAIResponse(userText)` 函數中（約第 209 行至 290 行）。當呼叫 Gemini API (`callGeminiAPI`) 時，最終送入的 Payload 包含 4 個主要部分：`systemPrompt`、`finalUserText`、`history`、`imageData`。
 
 ### A. `systemPrompt` (系統級設定)
 *   **檔案位置**: `c:\Users\LS404\Desktop\QTN\AI_Chatbot_Framework_COSTAR_EN.md` (於 `chat.js` L5 引入)。
 *   **目的**: 定義 AI 的人格（機構學顧問）與回答框架（COSTAR 規則）。
-*   *(註: 物理與機構診斷的細節原則參考自 `c:\Users\LS404\Desktop\QTN\六足機械\modularized\Kinematics_Reference.md`)*
+*   *(註: 物理與機構診斷的細節原則參考自 `c:\Users\LS404\Desktop\QTN\六足機械\robot_simulation\simulation\Kinematics_Reference.md`)*
 
 ### B. `finalUserText` (動態使用者文字)
 這一段在 `chat.js` L263 組裝，結合了以下元素：
